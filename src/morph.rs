@@ -60,7 +60,8 @@ impl Analyzer {
         })
     }
 
-    /// 文を解析して Token 列を持たせる。語彙素を持たない語は表層形を `lemma` にする。
+    /// 文を解析して Token 列を持たせる。書字形基本形を持たない語は表層形を `lemma` にし、
+    /// 隣り合う記号-文字の並びは 1 つの名詞にする。
     pub fn analyze(&self, sentence: &mut Sentence) -> Result<()> {
         let text = sentence.text();
         let mut analyzed = self
@@ -71,9 +72,47 @@ impl Analyzer {
                 source,
             })?;
         let tokens = analyzed.iter_mut().map(token).collect();
-        sentence.set_tokens(tokens);
+        sentence.set_tokens(join_letters(tokens));
         Ok(())
     }
+}
+
+/// 隣り合う記号-文字の Token を 1 つの名詞にする。
+fn join_letters(tokens: Vec<Token>) -> Vec<Token> {
+    let mut joined: Vec<Token> = Vec::with_capacity(tokens.len());
+    let mut after_letter = false;
+    for token in tokens {
+        let letter = is_letter(&token);
+        match joined.last_mut() {
+            Some(word)
+                if after_letter && letter && word.byte_range.end == token.byte_range.start =>
+            {
+                absorb(word, token);
+            }
+            _ => joined.push(token),
+        }
+        after_letter = letter;
+    }
+    joined
+}
+
+fn is_letter(token: &Token) -> bool {
+    token.pos.pos1 == Pos1::Symbol && token.pos.pos2 == "文字"
+}
+
+/// 後続の文字を取り込み、綴りを 1 語の名詞として持たせる。
+fn absorb(word: &mut Token, letter: Token) {
+    word.surface.push_str(&letter.surface);
+    word.byte_range.end = letter.byte_range.end;
+    word.lemma = word.surface.clone();
+    word.pos = Pos {
+        pos1: Pos1::Noun,
+        pos2: "普通名詞".to_string(),
+        pos3: String::new(),
+    };
+    word.ctype = None;
+    word.cform = None;
+    word.goshu = Goshu::Unknown;
 }
 
 fn token(analyzed: &mut LinderaToken) -> Token {
@@ -234,8 +273,31 @@ mod tests {
     }
 
     #[test]
+    fn a_run_of_letters_is_one_noun() {
+        let tokens = tokens("README と doc と api と CLI と Claude を読む。");
+        for surface in ["README", "doc", "api", "CLI", "Claude"] {
+            let token = find(&tokens, surface);
+            assert_eq!(token.pos.pos1, Pos1::Noun, "{surface}");
+            assert_eq!(token.lemma, surface, "{surface}");
+        }
+
+        let merged = find(&tokens, "api");
+        assert_eq!(merged.pos.pos2, "普通名詞");
+        assert_eq!(merged.pos.pos3, "");
+        assert_eq!(merged.goshu, Goshu::Unknown);
+        assert_eq!(merged.ctype, None);
+        assert_eq!(merged.cform, None);
+    }
+
+    #[test]
+    fn a_lone_letter_stays_a_symbol() {
+        let tokens = tokens("α を並べる。");
+        assert_eq!(find(&tokens, "α").pos.pos1, Pos1::Symbol);
+    }
+
+    #[test]
     fn the_byte_range_points_into_the_sentence() {
-        let segment = segment("設定のウィンドウを比べる。次の文だ。");
+        let segment = segment("設定の doc を比べる。次の文だ。");
         let mut sentences = split_sentences(&segment);
         assert_eq!(sentences.len(), 2);
         for sentence in &mut sentences {
