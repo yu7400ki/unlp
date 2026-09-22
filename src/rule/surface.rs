@@ -23,9 +23,21 @@ pub fn matches<'a>(text: &str, phrases: impl IntoIterator<Item = &'a str>) -> Ve
     sorted(ranges)
 }
 
-/// 文の中の範囲の抜粋。`LIMIT` 文字を超える分は落とす。
+/// 文の中の範囲の抜粋。連続する空白を 1 つに畳み、`LIMIT` 文字を超える分は落とす。
 fn excerpt(text: &str, range: Range<usize>) -> String {
-    text[range].chars().take(LIMIT).collect()
+    let mut excerpt = String::new();
+    let mut count = 0;
+    for c in text[range].chars() {
+        if c == ' ' && excerpt.ends_with(' ') {
+            continue;
+        }
+        excerpt.push(c);
+        count += 1;
+        if count == LIMIT {
+            break;
+        }
+    }
+    excerpt
 }
 
 /// 文の中の範囲を抜粋とする指摘。範囲の始まりの順に並ぶ。
@@ -84,6 +96,16 @@ mod tests {
     #[test]
     fn an_empty_phrase_matches_nothing() {
         assert_eq!(matches("文だ。", [""]), []);
+    }
+
+    #[test]
+    fn an_excerpt_folds_a_run_of_blanks() {
+        let text = "共通の引数:        、      、";
+        assert_eq!(excerpt(text, 0..text.len()), "共通の引数: 、 、");
+        assert_eq!(
+            excerpt("規則を 数える。", 0.."規則を 数える。".len()),
+            "規則を 数える。"
+        );
     }
 
     #[test]
