@@ -14,6 +14,12 @@ fn json(command: &mut Command) -> Value {
     serde_json::from_slice(&output).unwrap()
 }
 
+fn check_markdown(text: &str) -> Value {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), text).unwrap();
+    json(unlp().args(["check", "--json"]).arg(dir.path()))
+}
+
 #[test]
 fn stdin_becomes_one_document_scored_by_ja_chars() {
     let report = json(
@@ -216,4 +222,39 @@ fn a_missing_path_is_an_input_error() {
 #[test]
 fn check_requires_a_path() {
     unlp().arg("check").assert().code(2);
+}
+
+#[test]
+fn the_contents_of_code_are_not_counted() {
+    let report = check_markdown(concat!(
+        "段落だ。\n\n",
+        "```\nコードの中の文だ。\n```\n\n",
+        "    字下げのコードだ。\n\n",
+        "前に `コードスパンの文。` と続く。\n",
+    ));
+    assert_eq!(report["total"]["ja_chars"], 8);
+    assert_eq!(report["total"]["sentences"], 2);
+}
+
+#[test]
+fn a_numbered_item_is_scored_without_its_marker() {
+    let report = check_markdown("1. **結論です。**\n2. 次の項目だ。\n");
+    assert_eq!(report["documents"][0]["score"]["by_rule"]["F02"], 1);
+    let findings = report["documents"][0]["score"]["findings"]
+        .as_array()
+        .unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding["rule"] == "F02" && finding["excerpt"] == "**結論です。**"),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn a_heading_is_one_sentence_without_a_full_stop() {
+    let report = check_markdown("## これは重要だ\n\n本文だ。\n");
+    assert_eq!(report["total"]["ja_chars"], 9);
+    assert_eq!(report["total"]["sentences"], 2);
+    assert_eq!(report["documents"][0]["score"]["by_rule"]["S02"], 1);
 }

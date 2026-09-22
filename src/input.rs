@@ -11,6 +11,9 @@ use crate::sentence::is_japanese;
 /// 探索の対象から除くディレクトリの名前。
 const EXCLUDED_DIRS: [&str; 3] = ["target", "node_modules", ".git"];
 
+/// Markdown として抽出する拡張子。
+const MARKDOWN_EXTENSIONS: [&str; 2] = ["md", "markdown"];
+
 /// 入力の読み込みで生じる誤り。
 #[derive(Debug, Error)]
 pub enum Error {
@@ -26,7 +29,8 @@ pub enum Error {
 
 pub type Result<T> = result::Result<T, Error>;
 
-/// ファイル全体を 1 つの文書として読み込む。日本語の文字を含まなければ `None`。
+/// ファイルを 1 つの文書として読み込む。`.md` と `.markdown` は Markdown の本文を、
+/// 他の拡張子は全体を抽出する。日本語の文字を含まなければ `None`。
 pub fn read_document(path: &Path) -> Result<Option<Document>> {
     let bytes = fs::read(path).map_err(|source| Error::Read {
         path: path.to_path_buf(),
@@ -38,7 +42,22 @@ pub fn read_document(path: &Path) -> Result<Option<Document>> {
     if !text.chars().any(is_japanese) {
         return Ok(None);
     }
-    Ok(Some(extract::text_document(document_name(path), &text)))
+    let name = document_name(path);
+    Ok(Some(if is_markdown(path) {
+        extract::markdown_document(name, &text)
+    } else {
+        extract::text_document(name, &text)
+    }))
+}
+
+fn is_markdown(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            MARKDOWN_EXTENSIONS
+                .iter()
+                .any(|markdown| extension.eq_ignore_ascii_case(markdown))
+        })
 }
 
 /// 文書の名前。パスの区切りは OS によらず `/` にする。
@@ -136,6 +155,34 @@ mod tests {
 
         assert!(read_document(&japanese).unwrap().is_some());
         assert!(read_document(&latin).unwrap().is_none());
+    }
+
+    #[test]
+    fn the_extension_chooses_how_the_file_is_extracted() {
+        let dir = tempfile::tempdir().unwrap();
+        let text = "# 見出しだ\n\n```\nコードの文だ。\n```\n";
+        for (name, segments) in [("a.md", 1), ("a.MARKDOWN", 1), ("a.txt", 1), ("a", 1)] {
+            let path = dir.path().join(name);
+            fs::write(&path, text).unwrap();
+            let document = read_document(&path).unwrap().unwrap();
+            assert_eq!(document.segments.len(), segments, "{name}");
+        }
+        assert_eq!(
+            read_document(&dir.path().join("a.md"))
+                .unwrap()
+                .unwrap()
+                .segments[0]
+                .text,
+            "見出しだ"
+        );
+        assert_eq!(
+            read_document(&dir.path().join("a.txt"))
+                .unwrap()
+                .unwrap()
+                .segments[0]
+                .text,
+            text
+        );
     }
 
     #[test]
