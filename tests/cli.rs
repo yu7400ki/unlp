@@ -112,6 +112,20 @@ fn summary_keeps_the_totals_without_the_findings() {
     assert_eq!(report["documents"][0]["score"]["ja_chars"], 4);
     assert!(report["documents"][0]["score"]["by_rule"].is_object());
     assert!(report["documents"][0]["score"]["findings"].is_null());
+
+    let report = json(unlp().args(["stdin", "--json"]).write_stdin("日本語だ。"));
+    assert!(report["documents"][0]["score"]["findings"].is_array());
+}
+
+#[test]
+fn stdin_without_japanese_is_not_a_document() {
+    let report = json(
+        unlp()
+            .args(["stdin", "--json"])
+            .write_stdin("no japanese\n"),
+    );
+    assert_eq!(report["documents"].as_array().unwrap().len(), 0);
+    assert_eq!(report["total"]["ja_chars"], 0);
 }
 
 #[test]

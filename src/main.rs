@@ -6,8 +6,9 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use unlp::extract::{self, STDIN_NAME};
 use unlp::input;
-use unlp::score::{DEFAULT_FLOOR, DocumentScore, Measures, Report, Score, ScoreMode};
-use unlp::{Document, Finding, sentence};
+use unlp::score::{DEFAULT_FLOOR, DocumentScore, Measures, Report, Score, ScoreMode, Total};
+use unlp::sentence::{self, is_japanese};
+use unlp::{Document, Finding};
 
 /// 日本語の文章に残る AI の癖を検出して採点する。
 #[derive(Parser)]
@@ -58,10 +59,14 @@ fn run() -> Result<bool> {
     let cli = Cli::parse();
     let documents = match &cli.command {
         Command::Check { paths } => check(paths)?,
-        Command::Stdin => vec![extract::text_document(
-            STDIN_NAME.to_string(),
-            &read_stdin()?,
-        )],
+        Command::Stdin => {
+            let text = read_stdin()?;
+            text.chars()
+                .any(is_japanese)
+                .then(|| extract::text_document(STDIN_NAME.to_string(), &text))
+                .into_iter()
+                .collect()
+        }
     };
 
     let mut scores = Vec::new();
@@ -115,30 +120,14 @@ fn read_stdin() -> Result<String> {
 }
 
 fn print_report(report: &Report) {
-    for document in &report.documents {
+    for document in report.documents() {
         let score = &document.score;
-        print_findings(score.findings());
-        println!(
-            "{}  {}",
-            document.name,
-            format_point(
-                score.ja_chars(),
-                score.sentences(),
-                score.mode(),
-                score.finding_count()
-            )
-        );
+        if let Some(findings) = score.findings() {
+            print_findings(findings);
+        }
+        println!("{}  {}", document.name, format_point(&score.total()));
     }
-    let total = &report.total;
-    println!(
-        "全体  {}",
-        format_point(
-            total.ja_chars(),
-            total.sentences(),
-            total.mode(),
-            total.finding_count()
-        )
-    );
+    println!("全体  {}", format_point(report.total()));
 }
 
 fn print_findings(findings: &[Finding]) {
@@ -155,10 +144,10 @@ fn print_findings(findings: &[Finding]) {
     }
 }
 
-fn format_point(ja_chars: usize, sentences: usize, mode: &ScoreMode, findings: usize) -> String {
-    let point = match mode {
+fn format_point(total: &Total) -> String {
+    let point = match total.mode() {
         ScoreMode::Normalized { per_1000, .. } => format!("正規化 {per_1000:.1} 点"),
-        ScoreMode::CountOnly => format!("指摘 {findings} 件"),
+        ScoreMode::CountOnly => format!("指摘 {} 件", total.finding_count()),
     };
-    format!("{ja_chars} 字  {sentences} 文  {point}")
+    format!("{} 字  {} 文  {point}", total.ja_chars(), total.sentences())
 }

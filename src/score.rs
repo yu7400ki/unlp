@@ -11,8 +11,8 @@ pub const DEFAULT_FLOOR: usize = 300;
 /// 入力全体の結果。
 #[derive(Debug, Clone, Serialize)]
 pub struct Report {
-    pub documents: Vec<DocumentScore>,
-    pub total: Total,
+    documents: Vec<DocumentScore>,
+    total: Total,
 }
 
 /// 文書 1 つの結果。
@@ -30,8 +30,8 @@ pub struct Score {
     mode: ScoreMode,
     by_rule: BTreeMap<RuleId, usize>,
     measures: Measures,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    findings: Vec<Finding>,
+    /// 指摘の列。集計だけを残したときは `None`。
+    findings: Option<Vec<Finding>>,
 }
 
 /// 文書ごとの結果を日本語文字数で加重した集計。
@@ -84,7 +84,7 @@ impl Score {
             mode: mode_for(ja_chars, floor),
             by_rule,
             measures,
-            findings,
+            findings: Some(findings),
         }
     }
 
@@ -108,8 +108,9 @@ impl Score {
         &self.measures
     }
 
-    pub fn findings(&self) -> &[Finding] {
-        &self.findings
+    /// 指摘の列。集計だけを残したときは `None`。
+    pub fn findings(&self) -> Option<&[Finding]> {
+        self.findings.as_deref()
     }
 
     /// 指摘の件数。
@@ -124,7 +125,17 @@ impl Score {
 
     /// 指摘の列を落とし、集計だけを残す。
     pub fn forget_findings(&mut self) {
-        self.findings.clear();
+        self.findings = None;
+    }
+
+    /// 指摘と参考値を除いた集計。
+    pub fn total(&self) -> Total {
+        Total {
+            ja_chars: self.ja_chars,
+            sentences: self.sentences,
+            mode: self.mode.clone(),
+            by_rule: self.by_rule.clone(),
+        }
     }
 }
 
@@ -180,6 +191,14 @@ impl Report {
             by_rule,
         };
         Self { documents, total }
+    }
+
+    pub fn documents(&self) -> &[DocumentScore] {
+        &self.documents
+    }
+
+    pub fn total(&self) -> &Total {
+        &self.total
     }
 
     /// 全体の点がしきい値を超えているか。
@@ -309,14 +328,24 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_finding_list_is_still_a_list() {
+        let json = serde_json::to_string(&short(Vec::new())).unwrap();
+        assert!(json.contains(r#""findings":[]"#), "{json}");
+    }
+
+    #[test]
     fn forgetting_findings_keeps_the_counts() {
         let mut score = short(vec![finding(Layer::Structure, 1)]);
         assert!(serde_json::to_string(&score).unwrap().contains("findings"));
 
         score.forget_findings();
-        assert!(score.findings().is_empty());
+        assert!(score.findings().is_none());
         assert_eq!(score.by_rule()[&RuleId::new(Layer::Structure, 1)], 1);
-        assert!(!serde_json::to_string(&score).unwrap().contains("findings"));
+        assert!(
+            serde_json::to_string(&score)
+                .unwrap()
+                .contains(r#""findings":null"#)
+        );
     }
 
     #[test]

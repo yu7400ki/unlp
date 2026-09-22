@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::document::Document;
 use crate::extract;
-use crate::sentence;
+use crate::sentence::is_japanese;
 
 /// 探索の対象から除くディレクトリの名前。
 const EXCLUDED_DIRS: [&str; 3] = ["target", "node_modules", ".git"];
@@ -35,9 +35,15 @@ pub fn read_document(path: &Path) -> Result<Option<Document>> {
     let text = String::from_utf8(bytes).map_err(|_| Error::NotUtf8 {
         path: path.to_path_buf(),
     })?;
-    let document = extract::text_document(path.display().to_string(), &text);
-    let ja_chars = sentence::ja_chars(&sentence::split_document(&document));
-    Ok((ja_chars > 0).then_some(document))
+    if !text.chars().any(is_japanese) {
+        return Ok(None);
+    }
+    Ok(Some(extract::text_document(document_name(path), &text)))
+}
+
+/// 文書の名前。パスの区切りは OS によらず `/` にする。
+fn document_name(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 /// パスがディレクトリならその下のファイルを再帰的に列挙し、ファイルならそれ自身を返す。
@@ -130,6 +136,16 @@ mod tests {
 
         assert!(read_document(&japanese).unwrap().is_some());
         assert!(read_document(&latin).unwrap().is_none());
+    }
+
+    #[test]
+    fn document_names_use_forward_slashes() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        let file = dir.path().join("sub").join("a.txt");
+        fs::write(&file, "文だ。").unwrap();
+        let name = read_document(&file).unwrap().unwrap().name;
+        assert!(name.ends_with("sub/a.txt"), "{name}");
     }
 
     #[test]
