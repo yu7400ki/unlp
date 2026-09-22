@@ -77,11 +77,8 @@ impl Analyzer {
     }
 }
 
-/// 採点する文か。表のセルは語だけを並べることがあり、句点で終わるか述語を持つ文だけを採点する。
 fn is_scored(sentence: &Sentence) -> bool {
-    sentence.segment().kind != SegmentKind::TableCell
-        || sentence.is_terminated()
-        || sentence.has_predicate()
+    sentence.segment().kind != SegmentKind::TableCell || sentence.has_predicate()
 }
 
 /// 隣り合う記号-文字の Token を 1 つの名詞にする。
@@ -238,21 +235,26 @@ mod tests {
     }
 
     #[test]
-    fn a_table_cell_keeps_only_the_sentences_that_predicate() {
+    fn a_table_cell_keeps_only_the_sentences_with_a_predicate() {
         let document = Document {
             name: "t".to_string(),
             segments: vec![
                 cell("表のセル"),
-                cell("失敗する"),
                 cell("名詞の列挙。"),
-                segment("本文だ。"),
+                cell("失敗する"),
+                cell("セル本文である。"),
+                cell("ではない。"),
+                segment("名詞の列挙。"),
             ],
         };
 
         let sentences = ANALYZER.analyze_document(&document);
         let texts: Vec<&str> = sentences.iter().map(Sentence::text).collect();
-        assert_eq!(texts, ["失敗する", "名詞の列挙。", "本文だ。"]);
-        assert_eq!(sentence::ja_chars(&sentences), 12);
+        assert_eq!(
+            texts,
+            ["失敗する", "セル本文である。", "ではない。", "名詞の列挙。"]
+        );
+        assert_eq!(sentence::ja_chars(&sentences), 20);
     }
 
     #[test]

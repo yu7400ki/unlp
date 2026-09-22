@@ -261,9 +261,15 @@ fn a_heading_is_one_sentence_without_a_full_stop() {
 
 #[test]
 fn a_table_cell_without_a_predicate_is_not_counted() {
-    let report = check_markdown("| 語 | 説明 |\n|---|---|\n| 文字コード | 述語を含む文だ。 |\n");
+    let report = check_markdown(concat!(
+        "| 語 | 説明 |\n|---|---|\n",
+        "| 文字コード | 述語を含む文だ。 |\n",
+        "| 名詞の列挙。 | 語だけ |\n",
+    ));
     assert_eq!(report["total"]["ja_chars"], 7);
     assert_eq!(report["total"]["sentences"], 1);
+    let by_rule = report["total"]["by_rule"].as_object().unwrap();
+    assert!(by_rule.is_empty(), "{by_rule:?}");
 }
 
 #[test]
