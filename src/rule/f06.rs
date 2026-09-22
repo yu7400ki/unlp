@@ -93,6 +93,11 @@ mod tests {
     }
 
     #[test]
+    fn a_noun_outside_the_sahen_class_is_not_a_finding() {
+        assert!(excerpts("ソフトウェアをビルドすることができる。").is_empty());
+    }
+
+    #[test]
     fn the_findings_follow_the_order_of_the_text() {
         assert_eq!(excerpts("設定を行い、検証を行う。"), ["を行い", "を行う"]);
     }
