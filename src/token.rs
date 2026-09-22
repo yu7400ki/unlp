@@ -16,7 +16,7 @@ pub struct Token {
 }
 
 /// 品詞。`pos2` と `pos3` は辞書の細分類で、無い階層は空文字列。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Pos {
     pub pos1: Pos1,
     pub pos2: String,

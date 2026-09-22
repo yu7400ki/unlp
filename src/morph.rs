@@ -107,7 +107,7 @@ fn absorb(word: &mut Token, letter: Token) {
     word.pos = Pos {
         pos1: Pos1::Noun,
         pos2: "普通名詞".to_string(),
-        pos3: String::new(),
+        pos3: "一般".to_string(),
     };
     word.ctype = None;
     word.cform = None;
@@ -346,11 +346,17 @@ mod tests {
         }
 
         let merged = find(&tokens, "api");
-        assert_eq!(merged.pos.pos2, "普通名詞");
-        assert_eq!(merged.pos.pos3, "");
+        assert_eq!(merged.pos, find(&tokens, "README").pos);
         assert_eq!(merged.goshu, Goshu::Unknown);
         assert_eq!(merged.ctype, None);
         assert_eq!(merged.cform, None);
+    }
+
+    #[test]
+    fn letters_separated_by_a_space_stay_apart() {
+        let tokens = tokens("a b が並ぶ。");
+        assert_eq!(find(&tokens, "a").pos.pos1, Pos1::Symbol);
+        assert_eq!(find(&tokens, "b").pos.pos1, Pos1::Symbol);
     }
 
     #[test]
