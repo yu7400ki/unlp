@@ -252,7 +252,7 @@ fn a_numbered_item_is_scored_without_its_marker() {
 }
 
 #[test]
-fn a_heading_is_one_sentence_without_a_full_stop() {
+fn a_heading_is_one_sentence_without_its_marker() {
     let report = check_markdown("## これは重要だ\n\n本文だ。\n");
     assert_eq!(report["total"]["ja_chars"], 9);
     assert_eq!(report["total"]["sentences"], 2);

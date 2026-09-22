@@ -36,7 +36,7 @@ pub fn text_document(name: String, text: &str) -> Document {
 /// 引用記号は、同じバイト数の空白に置き換えて文字の位置を保つ。
 pub fn markdown_document(name: String, text: &str) -> Document {
     let mut options = Options::empty();
-    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS);
     let mut blocks = Blocks::new(name, text);
     for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
         blocks.step(event, range);
@@ -347,6 +347,15 @@ mod tests {
             ["一つ目だ。", "二つ目だ。"]
         );
         assert_eq!(texts("1. **結論です。**\n"), ["**結論です。**"]);
+    }
+
+    #[test]
+    fn a_task_list_marker_is_not_part_of_the_body() {
+        assert_eq!(
+            texts("- [ ] これは重要だ。\n- [x] 済みだ。\n"),
+            ["これは重要だ。", "済みだ。"]
+        );
+        assert_eq!(rules("- [ ] これは重要だ。"), ["S02"]);
     }
 
     #[test]
