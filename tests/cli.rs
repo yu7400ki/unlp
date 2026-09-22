@@ -453,3 +453,14 @@ fn a_plain_document_leaves_the_colloquialisms_and_the_hedges_alone() {
     assert!(by_rule["R01"].is_null(), "{by_rule}");
     assert!(by_rule["D03"].is_null(), "{by_rule}");
 }
+
+#[test]
+fn the_rule_book_stays_within_the_wago_ratio() {
+    let report = json(unlp().args(["check", "skills/", "--json"]));
+    let score = &report["documents"][0]["score"];
+    assert_eq!(score["mode"]["kind"], "normalized", "{score}");
+    assert!(
+        score["measures"]["final_wago_ratio"].as_f64().unwrap() < 0.7,
+        "{score}"
+    );
+}
