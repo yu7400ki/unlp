@@ -23,6 +23,7 @@ mod l02;
 mod l03;
 mod lemma;
 mod predicate;
+mod r02;
 mod s01;
 mod s02;
 mod s03;
@@ -224,6 +225,7 @@ pub fn sentence_rules() -> Vec<Box<dyn SentenceRule>> {
         Box::new(l02::LiteralTranslation),
         Box::new(l03::EnglishRhythm),
         Box::new(d02::PredicatelessFragment),
+        Box::new(r02::PhysicalMetaphor),
         Box::new(f01::ClosingFormula),
         Box::new(f02::BoldConclusion),
         Box::new(f03::BoldInProse),
