@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::rule::predicate::{is_aux_verb, is_case_particle, is_sahen_noun, is_verb};
+use crate::rule::predicate::{is_aux_verb, is_case_particle, is_comma, is_sahen_noun, is_verb};
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, WordList, surface};
 use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
@@ -97,10 +97,6 @@ fn is_phrase_token(token: &Token) -> bool {
 
 fn is_common_noun(token: &Token) -> bool {
     token.pos.pos1 == Pos1::Noun && matches!(token.pos.pos2.as_str(), "普通名詞" | "固有名詞")
-}
-
-fn is_comma(token: &Token) -> bool {
-    token.pos.pos1 == Pos1::SupplementarySymbol && token.pos.pos2 == "読点"
 }
 
 /// 語リストにある発話動詞。サ変可能の名詞は「する」が続くときに限る。

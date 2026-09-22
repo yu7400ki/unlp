@@ -293,3 +293,13 @@ fn a_file_with_japanese_only_in_code_is_not_a_document() {
     assert_eq!(report["documents"].as_array().unwrap().len(), 0);
     assert_eq!(report["total"]["ja_chars"], 0);
 }
+
+#[test]
+fn a_translated_paragraph_counts_the_literal_translations() {
+    let report = json(unlp().args(["stdin", "--json"]).write_stdin(concat!(
+        "既定では、キャッシュはメモリ上に保存されます。",
+        "各ワーカーがそれぞれ独自のファイルを書き込むため、8つのワーカーを持つマシンでは8つのコピーができます。",
+        "ディレクトリが一杯になると、書き込みは静かに失敗し、リクエストは上流 API へのフォールバックとなります。",
+    )));
+    assert_eq!(report["total"]["by_rule"]["L02"], 4);
+}

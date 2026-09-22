@@ -19,6 +19,7 @@ mod f06;
 #[cfg(test)]
 pub(crate) mod harness;
 mod l01;
+mod l02;
 mod l03;
 mod lemma;
 mod predicate;
@@ -220,6 +221,7 @@ pub fn sentence_rules() -> Vec<Box<dyn SentenceRule>> {
         Box::new(s04::FirstPerson),
         Box::new(s05::NegativeContrast),
         Box::new(l01::NativizedTerm),
+        Box::new(l02::LiteralTranslation),
         Box::new(l03::EnglishRhythm),
         Box::new(d02::PredicatelessFragment),
         Box::new(f01::ClosingFormula),
