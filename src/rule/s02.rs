@@ -41,7 +41,7 @@ fn is_demonstrative(token: &Token) -> bool {
 }
 
 fn is_plural_suffix(token: &Token) -> bool {
-    token.pos.pos1 == Pos1::Suffix && token.surface == "ら"
+    token.pos.pos1 == Pos1::Suffix && token.lemma == "ら"
 }
 
 #[cfg(test)]
