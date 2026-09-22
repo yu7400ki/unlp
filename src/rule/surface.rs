@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::ops::Range;
 
 use crate::rule::{Finding, RuleId};
@@ -6,9 +7,10 @@ use crate::sentence::Sentence;
 /// 抜粋に残す文字数。
 const LIMIT: usize = 40;
 
-/// 文の文字列に現れた句の範囲。始まりの順に並ぶ。
+/// 文の文字列に現れた句の範囲。始まりの順に並び、重なる一致は前の範囲だけを残す。同じ位置に
+/// 始まる一致は長い方を採る。
 pub fn matches<'a>(text: &str, phrases: impl IntoIterator<Item = &'a str>) -> Vec<Range<usize>> {
-    let mut ranges = Vec::new();
+    let mut found = Vec::new();
     for phrase in phrases {
         if phrase.is_empty() {
             continue;
@@ -17,10 +19,17 @@ pub fn matches<'a>(text: &str, phrases: impl IntoIterator<Item = &'a str>) -> Ve
         while let Some(offset) = text[from..].find(phrase) {
             let start = from + offset;
             from = start + phrase.len();
-            ranges.push(start..from);
+            found.push(start..from);
         }
     }
-    sorted(ranges)
+    found.sort_by_key(|range| (range.start, Reverse(range.end)));
+    let mut ranges: Vec<Range<usize>> = Vec::new();
+    for range in found {
+        if ranges.last().is_none_or(|last| last.end <= range.start) {
+            ranges.push(range);
+        }
+    }
+    ranges
 }
 
 /// 文の中の範囲の抜粋。連続する空白を 1 つに畳み、`LIMIT` 文字を超える分は落とす。
@@ -91,6 +100,26 @@ mod tests {
             matches("総じて、非常に長い", ["非常に", "総じて"]),
             [0..9, 12..21]
         );
+    }
+
+    #[test]
+    fn an_overlapping_phrase_is_not_a_second_range() {
+        assert_eq!(
+            matches(
+                "直感的な意味論を導入する。窓を開ける。",
+                ["直感的な意味論", "意味論を", "窓"]
+            ),
+            [0..21, 39..42]
+        );
+        assert_eq!(
+            matches(
+                "地とホバーの手応えを分ける。鍵を回す。",
+                ["地とホバー", "ホバーの手応え", "鍵"]
+            ),
+            [0..15, 42..45]
+        );
+        assert_eq!(matches("窓と鍵", ["窓", "鍵"]), [0..3, 6..9]);
+        assert_eq!(matches("窓と窓", ["窓"]), [0..3, 6..9]);
     }
 
     #[test]

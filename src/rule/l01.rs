@@ -66,6 +66,11 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_phrases_are_one_finding() {
+        assert_eq!(excerpts("地とホバーの手応えを分ける。"), ["地とホバー"]);
+    }
+
+    #[test]
     fn the_findings_follow_the_order_of_the_text() {
         assert_eq!(
             excerpts("電文を掃いてから品書きに戻す。"),

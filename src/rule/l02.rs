@@ -138,6 +138,11 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_phrases_are_one_finding() {
+        assert_eq!(excerpts("直感的な意味論を導入する。"), ["直感的な意味論"]);
+    }
+
+    #[test]
     fn the_findings_follow_the_order_of_the_text() {
         assert_eq!(
             excerpts("既定では、8つの鍵を持つ環境で静かに失敗します。"),
