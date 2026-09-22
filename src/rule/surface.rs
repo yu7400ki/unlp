@@ -3,6 +3,9 @@ use std::ops::Range;
 use crate::rule::{Finding, RuleId};
 use crate::sentence::{BOLD, Sentence};
 
+/// 抜粋に残す文字数。
+const LIMIT: usize = 40;
+
 /// 文の文字列に現れた句の範囲。始まりの順に並ぶ。
 pub fn matches<'a>(text: &str, phrases: impl IntoIterator<Item = &'a str>) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
@@ -40,6 +43,11 @@ pub fn inside_bold<'a>(text: &'a str, bold: &Range<usize>) -> &'a str {
     &text[bold.start + BOLD.len()..bold.end - BOLD.len()]
 }
 
+/// 文の中の範囲の抜粋。`LIMIT` 文字を超える分は落とす。
+fn excerpt(text: &str, range: Range<usize>) -> String {
+    text[range].chars().take(LIMIT).collect()
+}
+
 /// 文の中の範囲を抜粋とする指摘。範囲の始まりの順に並ぶ。
 pub fn findings_at(
     rule: RuleId,
@@ -53,7 +61,7 @@ pub fn findings_at(
             Finding::new(
                 rule,
                 sentence.segment().origin.clone(),
-                sentence.text()[range].to_string(),
+                excerpt(sentence.text(), range),
                 hint,
             )
         })
@@ -96,6 +104,15 @@ mod tests {
     #[test]
     fn an_empty_phrase_matches_nothing() {
         assert_eq!(matches("文だ。", [""]), []);
+    }
+
+    #[test]
+    fn an_excerpt_keeps_the_range_up_to_the_limit() {
+        assert_eq!(excerpt("規則を数える。", 0..9), "規則を");
+        let text = "あ".repeat(LIMIT + 1);
+        let long = excerpt(&text, 0..text.len());
+        assert_eq!(long.chars().count(), LIMIT);
+        assert_eq!(long, "あ".repeat(LIMIT));
     }
 
     #[test]

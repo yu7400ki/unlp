@@ -1,12 +1,9 @@
-use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule};
+use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
 
 const ID: RuleId = RuleId::new(Layer::Density, 2);
 const HINT: &str = "断片は読み手に文脈の復元を強いる。主題を補うか前後の文に繋げる";
-
-/// 抜粋に残す文字数。
-const EXCERPT: usize = 40;
 
 /// 述語を持たない断片文。
 pub struct PredicatelessFragment;
@@ -26,12 +23,8 @@ impl SentenceRule for PredicatelessFragment {
         if !text.ends_with(['。', '！', '？']) || sentence.tokens().iter().any(is_predicate) {
             return Vec::new();
         }
-        vec![Finding::new(
-            ID,
-            sentence.segment().origin.clone(),
-            text.chars().take(EXCERPT).collect(),
-            HINT,
-        )]
+        let whole = 0..text.len();
+        surface::findings_at(ID, sentence, vec![whole], HINT)
     }
 }
 
@@ -81,6 +74,6 @@ mod tests {
     fn the_excerpt_stops_at_forty_chars() {
         let excerpts = excerpts(&format!("{}。", "名詞の羅列".repeat(10)));
         assert_eq!(excerpts.len(), 1);
-        assert_eq!(excerpts[0].chars().count(), EXCERPT);
+        assert_eq!(excerpts[0].chars().count(), 40);
     }
 }
