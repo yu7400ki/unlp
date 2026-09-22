@@ -265,3 +265,18 @@ fn a_table_cell_without_a_predicate_is_not_counted() {
     assert_eq!(report["total"]["ja_chars"], 7);
     assert_eq!(report["total"]["sentences"], 1);
 }
+
+#[test]
+fn stdin_reads_markdown_with_the_format_flag() {
+    let markdown = "# 見出しだ\n\n```\nコードの中の文だ。\n```\n\n本文だ。\n";
+    let report = json(
+        unlp()
+            .args(["stdin", "--json", "--format", "markdown"])
+            .write_stdin(markdown),
+    );
+    assert_eq!(report["total"]["ja_chars"], 7);
+    assert_eq!(report["total"]["sentences"], 2);
+
+    let report = json(unlp().args(["stdin", "--json"]).write_stdin(markdown));
+    assert_eq!(report["total"]["ja_chars"], 15);
+}

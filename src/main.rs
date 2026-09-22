@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use unlp::extract::{self, STDIN_NAME};
 use unlp::input;
 use unlp::morph::Analyzer;
@@ -30,9 +30,29 @@ enum Command {
         paths: Vec<PathBuf>,
     },
     /// 標準入力を 1 つの文書として検査する
-    Stdin,
+    Stdin {
+        /// 標準入力を抽出する書式
+        #[arg(long, value_enum, default_value_t = Format::Text)]
+        format: Format,
+    },
     /// 規則の一覧と規則集の見出しを出力する
     Rules,
+}
+
+/// 入力を抽出する書式。
+#[derive(Clone, Copy, ValueEnum)]
+enum Format {
+    Text,
+    Markdown,
+}
+
+impl Format {
+    fn document(self, name: String, text: &str) -> Document {
+        match self {
+            Self::Text => extract::text_document(name, text),
+            Self::Markdown => extract::markdown_document(name, text),
+        }
+    }
 }
 
 #[derive(Args)]
@@ -68,11 +88,11 @@ fn run() -> Result<bool> {
             return Ok(false);
         }
         Command::Check { paths } => check(paths)?,
-        Command::Stdin => {
+        Command::Stdin { format } => {
             let text = read_stdin()?;
             text.chars()
                 .any(is_japanese)
-                .then(|| extract::text_document(STDIN_NAME.to_string(), &text))
+                .then(|| format.document(STDIN_NAME.to_string(), &text))
                 .into_iter()
                 .collect()
         }
