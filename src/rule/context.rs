@@ -57,6 +57,20 @@ impl Context {
     pub fn polite_ratio(&self) -> f64 {
         self.polite_ratio
     }
+
+    /// 語リストから語を 1 つ外した Context。
+    #[cfg(test)]
+    pub(crate) fn without_word(&self, rule: RuleId, group: &str, word: &str) -> Self {
+        let mut context = self.clone();
+        if let Some(words) = context
+            .lists
+            .get_mut(&rule)
+            .and_then(|list| list.0.get_mut(group))
+        {
+            words.remove(word);
+        }
+        context
+    }
 }
 
 fn weights(source: &str) -> BTreeMap<RuleId, f64> {
