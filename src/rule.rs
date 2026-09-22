@@ -10,6 +10,7 @@ use crate::sentence::{self, Sentence};
 mod context;
 mod d01;
 mod d02;
+mod d03;
 mod f01;
 mod f02;
 mod f03;
@@ -24,6 +25,7 @@ mod l01;
 mod l02;
 mod l03;
 pub(crate) mod predicate;
+mod r01;
 mod r02;
 mod r03;
 mod run;
@@ -229,6 +231,8 @@ pub fn sentence_rules() -> Vec<Box<dyn SentenceRule>> {
         Box::new(l02::LiteralTranslation),
         Box::new(l03::EnglishRhythm),
         Box::new(d02::PredicatelessFragment),
+        Box::new(d03::UnfoundedHedge),
+        Box::new(r01::Colloquialism),
         Box::new(r02::PhysicalMetaphor),
         Box::new(f01::ClosingFormula),
         Box::new(f02::BoldConclusion),

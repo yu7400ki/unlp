@@ -427,3 +427,29 @@ fn a_document_of_wago_predicates_is_a_finding() {
         "{findings:?}"
     );
 }
+
+#[test]
+fn a_polite_document_counts_the_colloquialisms_and_the_hedges() {
+    let report = json(unlp().args(["stdin", "--json"]).write_stdin(
+        "ちょっと直します。やつを消してしまいました。壊れるかもしれません。直るはずです。",
+    ));
+    let by_rule = &report["total"]["by_rule"];
+    assert_eq!(by_rule["R01"], 3, "{by_rule}");
+    assert_eq!(by_rule["D03"], 2, "{by_rule}");
+}
+
+#[test]
+fn a_plain_document_leaves_the_colloquialisms_and_the_hedges_alone() {
+    let report = json(
+        unlp()
+            .args(["stdin", "--json"])
+            .write_stdin("ちょっと直す。やつを消してしまった。壊れるかもしれない。直るはずだ。"),
+    );
+    let by_rule = &report["total"]["by_rule"];
+    assert_eq!(
+        report["documents"][0]["score"]["measures"]["polite_ratio"],
+        0.0
+    );
+    assert!(by_rule["R01"].is_null(), "{by_rule}");
+    assert!(by_rule["D03"].is_null(), "{by_rule}");
+}

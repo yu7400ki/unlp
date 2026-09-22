@@ -4,7 +4,7 @@ use crate::rule::{Layer, RuleId};
 
 const WEIGHTS: &str = include_str!("../../data/weights.toml");
 
-const LISTS: [(RuleId, &str); 8] = [
+const LISTS: [(RuleId, &str); 9] = [
     (
         RuleId::new(Layer::Structure, 1),
         include_str!("../../data/lists/S01.toml"),
@@ -26,6 +26,10 @@ const LISTS: [(RuleId, &str); 8] = [
         include_str!("../../data/lists/L02.toml"),
     ),
     (
+        RuleId::new(Layer::Register, 1),
+        include_str!("../../data/lists/R01.toml"),
+    ),
+    (
         RuleId::new(Layer::Register, 2),
         include_str!("../../data/lists/R02.toml"),
     ),
@@ -38,6 +42,9 @@ const LISTS: [(RuleId, &str); 8] = [
         include_str!("../../data/lists/F05.toml"),
     ),
 ];
+
+/// 敬体の文書として扱う敬体率の下限。
+const POLITE: f64 = 0.5;
 
 static EMPTY: WordList = WordList(BTreeMap::new());
 
@@ -88,9 +95,9 @@ impl Context {
         self.lists.get(&rule).unwrap_or(&EMPTY)
     }
 
-    /// 文のうち敬体で終わるものの割合。
-    pub fn polite_ratio(&self) -> f64 {
-        self.polite_ratio
+    /// 敬体の文書か。敬体だけで数える規則がこれで自身の適用を決める。
+    pub fn is_polite(&self) -> bool {
+        self.polite_ratio >= POLITE
     }
 
     /// 文書の敬体率を持たせた Context。
@@ -176,14 +183,24 @@ mod tests {
     }
 
     #[test]
-    fn the_polite_ratio_starts_at_zero() {
-        assert_eq!(Context::defaults().polite_ratio(), 0.0);
+    fn a_document_is_plain_until_its_polite_ratio_is_measured() {
+        assert!(!Context::defaults().is_polite());
+    }
+
+    #[test]
+    fn the_polite_ratio_decides_the_register_of_the_document() {
+        assert!(Context::defaults().with_polite_ratio(POLITE).is_polite());
+        assert!(
+            !Context::defaults()
+                .with_polite_ratio(POLITE - 0.01)
+                .is_polite()
+        );
     }
 
     #[test]
     fn the_polite_ratio_of_a_document_keeps_the_words_and_the_weights() {
         let context = Context::defaults().with_polite_ratio(0.75);
-        assert_eq!(context.polite_ratio(), 0.75);
+        assert!(context.is_polite());
         assert!(
             context
                 .list(RuleId::new(Layer::Structure, 1))
