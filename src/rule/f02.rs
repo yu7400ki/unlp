@@ -1,16 +1,14 @@
-use std::ops::RangeInclusive;
+use std::ops::{Range, RangeInclusive};
 
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
-use crate::sentence::{self, Sentence};
+use crate::sentence::{self, BOLD, Sentence};
+use crate::token::Pos1;
 
 const ID: RuleId = RuleId::new(Layer::Formulaic, 2);
 const HINT: &str = "太字で結論を先出ししない。文の順序で示す";
 
 /// 結論として数える太字の内側の文字数。
 const INNER: RangeInclusive<usize> = 2..=30;
-
-/// 言い切りの文末。
-const ENDINGS: [&str; 4] = ["です", "ます", "ません", "でした"];
 
 /// 冒頭の太字の結論。
 pub struct BoldConclusion;
@@ -24,35 +22,34 @@ impl SentenceRule for BoldConclusion {
         "F02"
     }
 
-    /// 文頭の太字が短く言い切っている箇所。箇条書きの番号は文頭の手前に置ける。
+    /// 文頭の太字が短く言い切っている箇所。
     fn check(&self, sentence: &Sentence, _context: &Context) -> Vec<Finding> {
         let text = sentence.text();
-        let head = text.len() - without_ordinal(text).len();
         let range = sentence::bold(text)
             .into_iter()
             .next()
-            .filter(|range| range.start == head)
+            .filter(|range| range.start == 0)
             .filter(|range| {
                 let inner = sentence::inside_bold(text, range);
-                INNER.contains(&inner.chars().count()) && concludes(inner)
+                INNER.contains(&inner.chars().count()) && concludes(sentence, range)
             });
         surface::findings_at(ID, sentence, range.into_iter().collect(), HINT)
     }
 }
 
-/// 言い切りで終わるか。句点は在ってもよい。
-fn concludes(inner: &str) -> bool {
-    let stem = inner.strip_suffix('。').unwrap_or(inner);
-    ENDINGS.iter().any(|ending| stem.ends_with(ending))
-}
-
-/// 箇条書きの番号を除いた残り。
-fn without_ordinal(text: &str) -> &str {
-    let rest = text.trim_start_matches(|c: char| c.is_ascii_digit());
-    if rest.len() == text.len() {
-        return text;
+/// 太字の内側が文として終わるか。句点で閉じるか、末尾の Token が助動詞であるもの。
+fn concludes(sentence: &Sentence, bold: &Range<usize>) -> bool {
+    let text = sentence.text();
+    let inner = sentence::inside_bold(text, bold);
+    if inner.ends_with('。') {
+        return true;
     }
-    rest.strip_prefix('.').map_or(text, str::trim_start)
+    let end = bold.end - BOLD.len();
+    sentence
+        .tokens()
+        .iter()
+        .rfind(|token| token.byte_range.end <= end)
+        .is_some_and(|token| token.pos.pos1 == Pos1::AuxVerb)
 }
 
 #[cfg(test)]
@@ -73,14 +70,17 @@ mod tests {
         assert_eq!(excerpts("**直します**。次に進む。"), ["**直します**"]);
         assert_eq!(excerpts("**直りません**。"), ["**直りません**"]);
         assert_eq!(excerpts("**そうでした**。"), ["**そうでした**"]);
+        assert_eq!(excerpts("**直しました**"), ["**直しました**"]);
+        assert_eq!(excerpts("**直した**。"), ["**直した**"]);
     }
 
     #[test]
-    fn an_ordinal_may_stand_before_the_bold() {
+    fn a_plain_conclusion_at_the_head_is_a_finding() {
         assert_eq!(
-            excerpts("1. **結論です。**理由を書く。"),
-            ["**結論です。**"]
+            excerpts("**これは意図した挙動だ。**"),
+            ["**これは意図した挙動だ。**"]
         );
+        assert_eq!(excerpts("**必要である。**"), ["**必要である。**"]);
     }
 
     #[test]
@@ -91,7 +91,8 @@ mod tests {
     #[test]
     fn a_bold_without_a_conclusion_is_not_a_finding() {
         assert!(excerpts("**名詞の列挙**だ。").is_empty());
-        assert!(excerpts("**直した**。").is_empty());
+        assert!(excerpts("**注意**").is_empty());
+        assert!(excerpts("**重要な点**").is_empty());
     }
 
     #[test]
