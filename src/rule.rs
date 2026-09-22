@@ -17,6 +17,7 @@ mod f04;
 pub(crate) use f04::ARROWS;
 mod f05;
 mod f06;
+mod g01;
 #[cfg(test)]
 pub(crate) mod harness;
 mod l01;
@@ -24,6 +25,7 @@ mod l02;
 mod l03;
 pub(crate) mod predicate;
 mod r02;
+mod r03;
 mod run;
 mod s01;
 mod s02;
@@ -242,6 +244,8 @@ pub fn document_rules() -> Vec<Box<dyn DocumentRule>> {
     vec![
         Box::new(s06::LeadingConjunction),
         Box::new(d01::ShortSentenceRun),
+        Box::new(r03::MixedRegister),
+        Box::new(g01::FinalWagoRatio),
     ]
 }
 

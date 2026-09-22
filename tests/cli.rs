@@ -83,7 +83,7 @@ fn the_text_output_lists_the_findings() {
 fn the_normalized_point_weighs_the_findings() {
     let text = format!(
         "{}型の doc が名乗る。",
-        "日本語の文をここでは十分長く書いてあるのだ。".repeat(14)
+        "この文はここでは十分に長く書いてある一文だ。".repeat(14)
     );
     let report = json(unlp().args(["stdin", "--json"]).write_stdin(text.as_str()));
     assert_eq!(report["total"]["ja_chars"], 300);
@@ -152,7 +152,7 @@ fn a_file_without_japanese_is_not_a_document() {
 
 #[test]
 fn the_floor_switches_the_total_to_a_normalized_point() {
-    let text = "日本語の文をここでは十分に長く書いてある。".repeat(15);
+    let text = "この文はここでは十分に長く書いてある文だ。".repeat(15);
     let report = json(unlp().args(["stdin", "--json"]).write_stdin(text));
     assert_eq!(report["total"]["ja_chars"], 300);
     assert_eq!(report["total"]["sentences"], 15);
@@ -165,7 +165,7 @@ fn fail_over_passes_when_the_point_is_within_the_threshold() {
     let report = json(
         unlp()
             .args(["stdin", "--json", "--fail-over=0"])
-            .write_stdin("日本語の文をここでは十分に長く書いてある。".repeat(15)),
+            .write_stdin("この文はここでは十分に長く書いてある文だ。".repeat(15)),
     );
     assert_eq!(report["total"]["mode"]["kind"], "normalized");
     assert_eq!(report["total"]["mode"]["per_1000"], 0.0);
@@ -175,7 +175,7 @@ fn fail_over_passes_when_the_point_is_within_the_threshold() {
 fn fail_over_stops_when_the_point_is_over_the_threshold() {
     unlp()
         .args(["stdin", "--fail-over=-1"])
-        .write_stdin("日本語の文をここでは十分に長く書いてある。".repeat(15))
+        .write_stdin("この文はここでは十分に長く書いてある文だ。".repeat(15))
         .assert()
         .code(1);
 }
@@ -363,6 +363,67 @@ fn a_run_of_short_sentences_is_a_finding() {
         findings
             .iter()
             .any(|finding| finding["rule"] == "D01" && finding["excerpt"] == "窓が開く。"),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn a_document_of_one_register_is_not_a_mixture() {
+    let report = json(
+        unlp()
+            .args(["stdin", "--json"])
+            .write_stdin("この文はここでは十分長く書いてあるのだ。".repeat(16)),
+    );
+    assert_eq!(report["total"]["mode"]["kind"], "normalized");
+    assert_eq!(
+        report["documents"][0]["score"]["measures"]["polite_ratio"],
+        0.0
+    );
+    assert!(report["total"]["by_rule"]["R03"].is_null(), "{report}");
+}
+
+#[test]
+fn a_document_of_both_registers_is_a_mixture() {
+    let text = format!(
+        "{}{}",
+        "この文はここでは十分長く書いてあります。".repeat(8),
+        "この文はここでは十分長く書いてあるのだ。".repeat(8)
+    );
+    let report = json(unlp().args(["stdin", "--json"]).write_stdin(text));
+    assert_eq!(report["total"]["by_rule"]["R03"], 1);
+    let findings = report["documents"][0]["score"]["findings"]
+        .as_array()
+        .unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding["rule"] == "R03" && finding["excerpt"] == "敬体 0.50 常体 0.50"),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn a_document_of_wago_predicates_is_a_finding() {
+    let text =
+        "設定を足すと読みが溜まる。窓を開けると値が下がる。本を読むと字が増える。".repeat(10);
+    let report = json(unlp().args(["stdin", "--json"]).write_stdin(text));
+    assert_eq!(report["total"]["mode"]["kind"], "normalized");
+    assert!(
+        report["documents"][0]["score"]["measures"]["final_wago_ratio"]
+            .as_f64()
+            .unwrap()
+            > 0.7
+    );
+    assert_eq!(report["total"]["by_rule"]["G01"], 1);
+    let findings = report["documents"][0]["score"]["findings"]
+        .as_array()
+        .unwrap();
+    assert!(
+        findings.iter().any(|finding| finding["rule"] == "G01"
+            && finding["excerpt"]
+                .as_str()
+                .unwrap()
+                .starts_with("下がる 10、増える 10、溜まる 10")),
         "{findings:?}"
     );
 }
