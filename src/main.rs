@@ -75,7 +75,7 @@ fn run() -> Result<bool> {
     for document in &documents {
         let mut sentences = sentence::split_document(document);
         for sentence in &mut sentences {
-            analyzer.analyze(sentence)?;
+            analyzer.analyze(sentence);
         }
         scores.push(DocumentScore {
             name: document.name.clone(),

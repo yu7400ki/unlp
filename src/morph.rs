@@ -1,8 +1,7 @@
 use std::borrow::Cow;
-use std::result;
+use std::{error, result};
 
 use lindera::dictionary::{DictionaryKind, load_embedded_dictionary};
-use lindera::error::LinderaError;
 use lindera::mode::Mode;
 use lindera::segmenter::Segmenter;
 use lindera::token::Token as LinderaToken;
@@ -26,15 +25,9 @@ const COLUMNS: [&str; 7] = [POS1, POS2, POS3, CTYPE, CFORM, LEMMA, GOSHU];
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("同梱した辞書を読み込めない")]
-    Dictionary(#[source] LinderaError),
+    Dictionary(#[source] Box<dyn error::Error + Send + Sync>),
     #[error("辞書のスキーマに列 {column} が無い")]
     MissingColumn { column: &'static str },
-    #[error("文を解析できない: {text}")]
-    Segment {
-        text: String,
-        #[source]
-        source: LinderaError,
-    },
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -45,10 +38,11 @@ pub struct Analyzer {
 }
 
 impl Analyzer {
-    /// 同梱した辞書を読み込む。Token の欄に対応する列を持たないスキーマは誤りとする。
+    /// 同梱した辞書を読み込む。辞書を読めないとき、および Token の欄に写す列の名前が
+    /// 辞書のスキーマに無いときは、ここで誤りを返す。
     pub fn new() -> Result<Self> {
-        let dictionary =
-            load_embedded_dictionary(DictionaryKind::UniDic).map_err(Error::Dictionary)?;
+        let dictionary = load_embedded_dictionary(DictionaryKind::UniDic)
+            .map_err(|error| Error::Dictionary(Box::new(error)))?;
         let schema = &dictionary.metadata.dictionary_schema;
         for column in COLUMNS {
             if schema.get_field_index(column).is_none() {
@@ -62,18 +56,13 @@ impl Analyzer {
 
     /// 文を解析して Token 列を持たせる。書字形基本形を持たない語は表層形を `lemma` にし、
     /// 隣り合う記号-文字の並びは 1 つの名詞にする。
-    pub fn analyze(&self, sentence: &mut Sentence) -> Result<()> {
-        let text = sentence.text();
+    pub fn analyze(&self, sentence: &mut Sentence) {
         let mut analyzed = self
             .segmenter
-            .segment(Cow::Borrowed(text))
-            .map_err(|source| Error::Segment {
-                text: text.to_string(),
-                source,
-            })?;
+            .segment(Cow::Borrowed(sentence.text()))
+            .expect("読み込めた辞書での文の解析は成功する");
         let tokens = analyzed.iter_mut().map(token).collect();
         sentence.set_tokens(join_letters(tokens));
-        Ok(())
     }
 }
 
@@ -201,7 +190,7 @@ mod tests {
         let segment = segment(text);
         let mut sentences = split_sentences(&segment);
         for sentence in &mut sentences {
-            ANALYZER.analyze(sentence).unwrap();
+            ANALYZER.analyze(sentence);
         }
         sentences
             .iter()
@@ -352,7 +341,7 @@ mod tests {
         let mut sentences = split_sentences(&segment);
         assert_eq!(sentences.len(), 2);
         for sentence in &mut sentences {
-            ANALYZER.analyze(sentence).unwrap();
+            ANALYZER.analyze(sentence);
             let text = sentence.text();
             for token in sentence.tokens() {
                 assert_eq!(&text[token.byte_range.clone()], token.surface);
