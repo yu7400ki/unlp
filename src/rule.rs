@@ -12,6 +12,9 @@ mod s01;
 
 pub use context::{Context, WordList};
 
+/// 規則集。
+const RULES: &str = include_str!("../skills/unlp/reference/rules.md");
+
 /// 規則の層。指摘の重みと、どの条件で数えるかを決める。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -200,6 +203,15 @@ pub fn registered() -> Vec<(RuleId, &'static str)> {
         .collect()
 }
 
+/// anchor が指す規則集の見出し。ID に続く一文を返す。
+pub fn doc_heading(anchor: &str) -> Option<&'static str> {
+    RULES
+        .lines()
+        .filter_map(|line| line.strip_prefix("## "))
+        .find_map(|heading| heading.strip_prefix(anchor)?.strip_prefix(' '))
+        .map(str::trim)
+}
+
 /// 一覧にある全ての規則を適用した指摘。文の順、規則の順に並ぶ。
 pub fn check(sentences: &[Sentence], context: &Context) -> Vec<Finding> {
     let mut findings = Vec::new();
@@ -232,6 +244,30 @@ mod tests {
         for text in ["", "S", "S0", "S00", "S1", "S001", "X01", "s01", "SAB"] {
             assert!(text.parse::<RuleId>().is_err(), "{text}");
         }
+    }
+
+    #[test]
+    fn every_rule_points_at_a_heading_of_the_rule_book() {
+        for (rule, anchor) in registered() {
+            assert!(
+                doc_heading(anchor).is_some_and(|heading| !heading.is_empty()),
+                "{rule} の anchor {anchor} に対応する見出しが無い"
+            );
+        }
+    }
+
+    #[test]
+    fn every_weighted_rule_has_a_heading() {
+        for rule in Context::defaults().weights().keys() {
+            assert!(doc_heading(&rule.to_string()).is_some(), "{rule}");
+        }
+    }
+
+    #[test]
+    fn a_heading_is_read_without_its_id() {
+        assert_eq!(doc_heading("S01"), Some("文書・型・検査を語り手にしない"));
+        assert_eq!(doc_heading("S0"), None);
+        assert_eq!(doc_heading("Z99"), None);
     }
 
     #[test]
