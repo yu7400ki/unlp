@@ -51,8 +51,10 @@ fn is_de(token: &Token, previous: Option<&Token>) -> bool {
 }
 
 /// 名詞句の末尾になる品詞か。
+/// 名詞句の末尾に立てる Token。閉じ括弧は括られた語の末尾として受ける。
 fn is_nominal(token: &Token) -> bool {
     matches!(token.pos.pos1, Pos1::Noun | Pos1::Pronoun | Pos1::Suffix)
+        || (token.pos.pos1 == Pos1::SupplementarySymbol && token.pos.pos2 == "括弧閉")
 }
 
 /// 後ろに肯定が続く形の「ない」。
@@ -81,6 +83,12 @@ mod tests {
         assert_eq!(excerpts("直すのでは無く消す。"), ["では無く"]);
         assert_eq!(excerpts("規則ではなく慣習に従う。"), ["ではなく"]);
         assert_eq!(excerpts("ここではなく向こうに置く。"), ["ではなく"]);
+    }
+
+    #[test]
+    fn a_quoted_word_before_the_denial_is_a_finding() {
+        assert_eq!(excerpts("「冒険」ではなく日常を描く。"), ["ではなく"]);
+        assert!(excerpts("それは「冒険」ではない。").is_empty());
     }
 
     #[test]
