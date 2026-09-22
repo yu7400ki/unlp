@@ -7,7 +7,7 @@ use lindera::segmenter::Segmenter;
 use lindera::token::Token as LinderaToken;
 use thiserror::Error;
 
-use crate::document::Document;
+use crate::document::{Document, SegmentKind};
 use crate::sentence::{self, Sentence};
 use crate::token::{Goshu, Pos, Pos1, Token};
 
@@ -55,12 +55,13 @@ impl Analyzer {
         })
     }
 
-    /// 文書を文に分割し、解析した文を返す。
+    /// 文書を文に分割し、解析した文を返す。表のセルの文は、述語を持つものだけを返す。
     pub fn analyze_document<'a>(&self, document: &'a Document) -> Vec<Sentence<'a>> {
         let mut sentences = sentence::split_document(document);
         for sentence in &mut sentences {
             self.analyze(sentence);
         }
+        sentences.retain(is_scored);
         sentences
     }
 
@@ -74,6 +75,13 @@ impl Analyzer {
         let tokens = analyzed.iter_mut().map(token).collect();
         sentence.set_tokens(join_letters(tokens));
     }
+}
+
+/// 採点する文か。表のセルは語だけを並べることがあり、句点で終わるか述語を持つ文だけを採点する。
+fn is_scored(sentence: &Sentence) -> bool {
+    sentence.segment().kind != SegmentKind::TableCell
+        || sentence.is_terminated()
+        || sentence.has_predicate()
 }
 
 /// 隣り合う記号-文字の Token を 1 つの名詞にする。
@@ -220,6 +228,31 @@ mod tests {
             .iter()
             .find(|token| token.surface == surface)
             .unwrap_or_else(|| panic!("{surface} が無い: {}", surfaces()))
+    }
+
+    fn cell(text: &str) -> Segment {
+        Segment {
+            kind: SegmentKind::TableCell,
+            ..segment(text)
+        }
+    }
+
+    #[test]
+    fn a_table_cell_keeps_only_the_sentences_that_predicate() {
+        let document = Document {
+            name: "t".to_string(),
+            segments: vec![
+                cell("表のセル"),
+                cell("失敗する"),
+                cell("名詞の列挙。"),
+                segment("本文だ。"),
+            ],
+        };
+
+        let sentences = ANALYZER.analyze_document(&document);
+        let texts: Vec<&str> = sentences.iter().map(Sentence::text).collect();
+        assert_eq!(texts, ["失敗する", "名詞の列挙。", "本文だ。"]);
+        assert_eq!(sentence::ja_chars(&sentences), 12);
     }
 
     #[test]

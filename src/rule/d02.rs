@@ -1,6 +1,5 @@
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::Sentence;
-use crate::token::{Pos1, Token};
 
 const ID: RuleId = RuleId::new(Layer::Density, 2);
 const HINT: &str = "断片は読み手に文脈の復元を強いる。主題を補うか前後の文に繋げる";
@@ -22,23 +21,11 @@ impl SentenceRule for PredicatelessFragment {
 
     /// 句点で終わり、`JA_CHARS` 字までの日本語で、述語になる Token を 1 つも持たない文。
     fn check(&self, sentence: &Sentence, _context: &Context) -> Vec<Finding> {
-        let text = sentence.text();
-        if !text.ends_with(['。', '！', '？'])
-            || sentence.ja_chars() > JA_CHARS
-            || sentence.tokens().iter().any(is_predicate)
-        {
+        if !sentence.is_terminated() || sentence.ja_chars() > JA_CHARS || sentence.has_predicate() {
             return Vec::new();
         }
-        let whole = 0..text.len();
+        let whole = 0..sentence.text().len();
         surface::findings_at(ID, sentence, vec![whole], HINT)
-    }
-}
-
-fn is_predicate(token: &Token) -> bool {
-    match token.pos.pos1 {
-        Pos1::Verb | Pos1::Adjective | Pos1::AdjectivalNoun => true,
-        Pos1::AuxVerb => matches!(token.lemma.as_str(), "だ" | "です"),
-        _ => false,
     }
 }
 

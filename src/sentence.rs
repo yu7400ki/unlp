@@ -1,10 +1,13 @@
 use std::ops::Range;
 
 use crate::document::{Document, Segment};
-use crate::token::Token;
+use crate::token::{Pos1, Token};
 
 /// 太字の記法。
 pub(crate) const BOLD: &str = "**";
+
+/// 文を終える記号。
+const TERMINATORS: [char; 3] = ['。', '！', '？'];
 
 /// Segment から切り出した 1 文。`byte_range` は Segment の文字列の中の位置。
 #[derive(Debug, Clone)]
@@ -39,6 +42,25 @@ impl<'a> Sentence<'a> {
     /// 文に含まれる日本語の文字数。
     pub fn ja_chars(&self) -> usize {
         self.text().chars().filter(|c| is_japanese(*c)).count()
+    }
+
+    /// 句点で終わるか。
+    pub fn is_terminated(&self) -> bool {
+        self.text().ends_with(TERMINATORS)
+    }
+
+    /// 述語になる Token を持つか。
+    pub fn has_predicate(&self) -> bool {
+        self.tokens.iter().any(is_predicate)
+    }
+}
+
+/// 述語になる Token か。動詞、形容詞、形状詞と、断定の助動詞。
+fn is_predicate(token: &Token) -> bool {
+    match token.pos.pos1 {
+        Pos1::Verb | Pos1::Adjective | Pos1::AdjectivalNoun => true,
+        Pos1::AuxVerb => matches!(token.lemma.as_str(), "だ" | "です"),
+        _ => false,
     }
 }
 
@@ -136,7 +158,7 @@ pub(crate) fn split_sentences(segment: &Segment) -> Vec<Sentence<'_>> {
                 closers.pop();
             }
             _ if !closers.is_empty() => {}
-            '。' | '！' | '？' => {
+            _ if TERMINATORS.contains(&c) => {
                 let end = index + c.len_utf8();
                 push_sentence(&mut sentences, segment, start..end);
                 start = end;

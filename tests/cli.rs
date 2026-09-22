@@ -258,3 +258,10 @@ fn a_heading_is_one_sentence_without_a_full_stop() {
     assert_eq!(report["total"]["sentences"], 2);
     assert_eq!(report["documents"][0]["score"]["by_rule"]["S02"], 1);
 }
+
+#[test]
+fn a_table_cell_without_a_predicate_is_not_counted() {
+    let report = check_markdown("| 語 | 説明 |\n|---|---|\n| 文字コード | 述語を含む文だ。 |\n");
+    assert_eq!(report["total"]["ja_chars"], 7);
+    assert_eq!(report["total"]["sentences"], 1);
+}
