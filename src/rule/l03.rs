@@ -38,8 +38,7 @@ fn begins(tokens: &[Token], index: usize) -> Option<usize> {
     if tokens.get(next).is_some_and(is_conjunctive_particle) {
         next += 1;
     }
-    tokens.get(next).filter(|token| is_beginning(token))?;
-    Some(next)
+    is_beginning(tokens.get(next)?).then_some(next)
 }
 
 /// 続く「た瞬間」の末尾の位置。
@@ -54,7 +53,7 @@ fn is_conjunctive_particle(token: &Token) -> bool {
 }
 
 fn is_beginning(token: &Token) -> bool {
-    is_verb(token, "始める") && token.pos.pos2 == "非自立可能"
+    is_verb(token, "始める")
 }
 
 fn is_past(token: &Token) -> bool {

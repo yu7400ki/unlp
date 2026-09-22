@@ -1,17 +1,13 @@
 use crate::token::{Pos1, Token};
 
+/// 表層が一致する助詞。
+pub fn is_particle(token: &Token, surface: &str) -> bool {
+    token.pos.pos1 == Pos1::Particle && token.surface == surface
+}
+
 /// 表層が一致する格助詞。
 pub fn is_case_particle(token: &Token, surface: &str) -> bool {
-    is_particle(token, "格助詞", surface)
-}
-
-/// 表層が一致する係助詞。
-pub fn is_topic_particle(token: &Token, surface: &str) -> bool {
-    is_particle(token, "係助詞", surface)
-}
-
-fn is_particle(token: &Token, pos2: &str, surface: &str) -> bool {
-    token.pos.pos1 == Pos1::Particle && token.pos.pos2 == pos2 && token.surface == surface
+    is_particle(token, surface) && token.pos.pos2 == "格助詞"
 }
 
 /// サ変可能の名詞。

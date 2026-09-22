@@ -1,4 +1,4 @@
-use crate::rule::predicate::is_topic_particle;
+use crate::rule::predicate::is_particle;
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
@@ -18,7 +18,7 @@ impl SentenceRule for LeadingDemonstrative {
         "S02"
     }
 
-    /// 文頭の「これ」「それ」に係助詞が続く箇所。複数を表す接尾辞「ら」を挟む形も含む。
+    /// 文頭の「これ」「それ」に「は」「も」が続く箇所。複数を表す接尾辞「ら」を挟む形も含む。
     fn check(&self, sentence: &Sentence, _context: &Context) -> Vec<Finding> {
         let tokens = sentence.tokens();
         let Some(head) = tokens.first().filter(|token| is_demonstrative(token)) else {
@@ -30,7 +30,7 @@ impl SentenceRule for LeadingDemonstrative {
         }
         let range = tokens
             .get(next)
-            .filter(|token| is_topic_particle(token, "は") || is_topic_particle(token, "も"))
+            .filter(|token| is_particle(token, "は") || is_particle(token, "も"))
             .map(|particle| head.byte_range.start..particle.byte_range.end);
         surface::findings_at(ID, sentence, range.into_iter().collect(), HINT)
     }

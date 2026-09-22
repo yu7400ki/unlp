@@ -1,4 +1,4 @@
-use crate::rule::predicate::{is_aux_verb, is_case_particle, is_topic_particle};
+use crate::rule::predicate::{is_aux_verb, is_case_particle, is_particle};
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
@@ -24,7 +24,7 @@ impl SentenceRule for NegativeContrast {
         "S05"
     }
 
-    /// 「で」に係助詞「は」と連用形の「ない」が続く箇所と、対句を導く句が現れた箇所。
+    /// 「で」に「は」と連用形の「ない」が続く箇所と、対句を導く句が現れた箇所。
     fn check(&self, sentence: &Sentence, _context: &Context) -> Vec<Finding> {
         let tokens = sentence.tokens();
         let mut ranges = surface::matches(sentence.text(), PHRASES);
@@ -35,7 +35,7 @@ impl SentenceRule for NegativeContrast {
                 .filter(|(index, window)| {
                     let previous = index.checked_sub(1).map(|previous| &tokens[previous]);
                     is_de(&window[0], previous)
-                        && is_topic_particle(&window[1], "は")
+                        && is_particle(&window[1], "は")
                         && is_nai(&window[2])
                 })
                 .map(|(_, window)| window[0].byte_range.start..window[2].byte_range.end),
