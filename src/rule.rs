@@ -8,7 +8,13 @@ use crate::document::Origin;
 use crate::sentence::{self, Sentence};
 
 mod context;
+#[cfg(test)]
+pub(crate) mod harness;
 mod s01;
+mod s02;
+mod s03;
+mod s04;
+mod surface;
 
 pub use context::{Context, WordList};
 
@@ -194,7 +200,12 @@ pub trait DocumentRule {
 
 /// 文の規則の一覧。
 pub fn sentence_rules() -> Vec<Box<dyn SentenceRule>> {
-    vec![Box::new(s01::InanimateSpeaker)]
+    vec![
+        Box::new(s01::InanimateSpeaker),
+        Box::new(s02::LeadingDemonstrative),
+        Box::new(s03::Scaffolding),
+        Box::new(s04::FirstPerson),
+    ]
 }
 
 /// 文書の規則の一覧。

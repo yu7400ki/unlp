@@ -4,10 +4,16 @@ use crate::rule::{Layer, RuleId};
 
 const WEIGHTS: &str = include_str!("../../data/weights.toml");
 
-const LISTS: [(RuleId, &str); 1] = [(
-    RuleId::new(Layer::Structure, 1),
-    include_str!("../../data/lists/S01.toml"),
-)];
+const LISTS: [(RuleId, &str); 2] = [
+    (
+        RuleId::new(Layer::Structure, 1),
+        include_str!("../../data/lists/S01.toml"),
+    ),
+    (
+        RuleId::new(Layer::Structure, 3),
+        include_str!("../../data/lists/S03.toml"),
+    ),
+];
 
 static EMPTY: WordList = WordList(BTreeMap::new());
 
@@ -19,6 +25,11 @@ impl WordList {
     /// 欄に語が含まれるか。
     pub fn contains(&self, group: &str, word: &str) -> bool {
         self.0.get(group).is_some_and(|words| words.contains(word))
+    }
+
+    /// 欄にある語。持たない欄は空。
+    pub fn words(&self, group: &str) -> impl Iterator<Item = &str> {
+        self.0.get(group).into_iter().flatten().map(String::as_str)
     }
 }
 
@@ -112,6 +123,14 @@ mod tests {
         assert!(list.contains("speech", "述べる"));
         assert!(!list.contains("speech", "言う"));
         assert!(!list.contains("person", "述べる"));
+    }
+
+    #[test]
+    fn the_words_of_a_group_are_read_back() {
+        let context = Context::defaults();
+        let list = context.list(RuleId::new(Layer::Structure, 3));
+        assert!(list.words("phrases").any(|word| word == "つまり、"));
+        assert_eq!(list.words("speech").count(), 0);
     }
 
     #[test]

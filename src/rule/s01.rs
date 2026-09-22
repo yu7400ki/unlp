@@ -157,39 +157,15 @@ fn is_suru(token: Option<&Token>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU32;
-    use std::sync::LazyLock;
-
     use super::*;
-    use crate::document::{Document, LineRange, Origin, Segment, SegmentKind};
-    use crate::morph::Analyzer;
-
-    static ANALYZER: LazyLock<Analyzer> = LazyLock::new(|| Analyzer::new().unwrap());
-    static CONTEXT: LazyLock<Context> = LazyLock::new(Context::defaults);
+    use crate::rule::harness::{self, CONTEXT};
 
     fn excerpts(text: &str) -> Vec<String> {
-        excerpts_with(&CONTEXT, text)
+        harness::excerpts(&InanimateSpeaker, text)
     }
 
     fn excerpts_with(context: &Context, text: &str) -> Vec<String> {
-        let document = Document {
-            name: "t".to_string(),
-            segments: vec![Segment {
-                text: text.to_string(),
-                origin: Origin {
-                    path: "t".to_string(),
-                    lines: LineRange::new(NonZeroU32::MIN, NonZeroU32::MIN).unwrap(),
-                    commit: None,
-                },
-                kind: SegmentKind::Prose,
-            }],
-        };
-        ANALYZER
-            .analyze_document(&document)
-            .iter()
-            .flat_map(|sentence| InanimateSpeaker.check(sentence, context))
-            .map(|finding| finding.excerpt().to_string())
-            .collect()
+        harness::excerpts_with(&InanimateSpeaker, context, text)
     }
 
     #[test]
