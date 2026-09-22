@@ -272,6 +272,57 @@ mod tests {
         assert_eq!(unknown.ctype, None);
     }
 
+    /// 辞書が返す品詞と `Pos1` の対応。空白は `Segmenter` が空白の Token を落とすので
+    /// 生じず、16 分類のうち残る 15 をここで突き合わせる。
+    #[test]
+    fn every_pos_of_the_dictionary_has_its_own_variant() {
+        let tokens = tokens(concat!(
+            "これはとても静かな部屋だ。",
+            "しかしこの本は高い。",
+            "ああ、そうします。",
+            "ご説明は第一章の内容的なものです。",
+            "α を並べる。",
+        ));
+        let expected = [
+            ("部屋", Pos1::Noun),
+            ("これ", Pos1::Pronoun),
+            ("静か", Pos1::AdjectivalNoun),
+            ("この", Pos1::Adnominal),
+            ("とても", Pos1::Adverb),
+            ("しかし", Pos1::Conjunction),
+            ("ああ", Pos1::Interjection),
+            ("並べる", Pos1::Verb),
+            ("高い", Pos1::Adjective),
+            ("だ", Pos1::AuxVerb),
+            ("は", Pos1::Particle),
+            ("第", Pos1::Prefix),
+            ("的", Pos1::Suffix),
+            ("α", Pos1::Symbol),
+            ("。", Pos1::SupplementarySymbol),
+        ];
+        for (surface, pos1) in expected {
+            assert_eq!(find(&tokens, surface).pos.pos1, pos1, "{surface}");
+        }
+    }
+
+    /// 辞書が返す語種と `Goshu` の対応。
+    #[test]
+    fn every_goshu_of_the_dictionary_has_its_own_variant() {
+        let tokens = tokens("田中さんが本とゴムを買った。サボることが README に載る。");
+        let expected = [
+            ("が", Goshu::Wago),
+            ("本", Goshu::Kango),
+            ("ゴム", Goshu::Gairai),
+            ("サボる", Goshu::Konshu),
+            ("。", Goshu::Symbol),
+            ("田中", Goshu::Proper),
+            ("README", Goshu::Unknown),
+        ];
+        for (surface, goshu) in expected {
+            assert_eq!(find(&tokens, surface).goshu, goshu, "{surface}");
+        }
+    }
+
     #[test]
     fn a_run_of_letters_is_one_noun() {
         let tokens = tokens("README と doc と api と CLI と Claude を読む。");
