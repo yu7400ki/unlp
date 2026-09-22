@@ -13,6 +13,9 @@ pub const STDIN_NAME: &str = "<stdin>";
 /// 強調の記法の長さ。`*` と `_` のいずれでも 1 バイト。
 const EMPHASIS: usize = 1;
 
+/// 表のセルで空白に置き換える矢印。
+const ARROW: char = '→';
+
 /// テキスト全体を 1 つの Prose Segment とする文書。`name` が Segment の位置の path になる。
 pub fn text_document(name: String, text: &str) -> Document {
     let origin = Origin {
@@ -33,7 +36,7 @@ pub fn text_document(name: String, text: &str) -> Document {
 /// Markdown の本文を Segment とする文書。段落、見出し、箇条書きの項目、引用ブロックの本文を
 /// Prose、表のセルを TableCell にし、原文の順に並べる。コードブロックは Segment にしない。
 /// インラインコード、インライン HTML、リンクの記法と URL、画像、行頭の引用記号は、同じ
-/// バイト数の空白に置き換えて文字の位置を保つ。
+/// バイト数の空白に置き換えて文字の位置を保つ。表のセルでは強調の記法と矢印も置き換える。
 pub fn markdown_document(name: String, text: &str) -> Document {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS);
@@ -116,8 +119,8 @@ impl<'a> Blocks<'a> {
             _ if self.code_block => {}
             Tag::Paragraph | Tag::Heading { .. } | Tag::Item => self.open(SegmentKind::Prose),
             Tag::TableCell => self.open(SegmentKind::TableCell),
-            Tag::Strong => self.body(range.start..range.start + BOLD.len()),
-            Tag::Emphasis => self.body(range.start..range.start + EMPHASIS),
+            Tag::Strong => self.notation(range.start..range.start + BOLD.len()),
+            Tag::Emphasis => self.notation(range.start..range.start + EMPHASIS),
             Tag::Image { .. } => self.blank(range),
             Tag::Link { link_type, .. } => {
                 if matches!(link_type, LinkType::Autolink | LinkType::Email) {
@@ -136,8 +139,8 @@ impl<'a> Blocks<'a> {
             TagEnd::Paragraph | TagEnd::Heading(_) | TagEnd::Item | TagEnd::TableCell => {
                 self.close();
             }
-            TagEnd::Strong => self.body(range.end - BOLD.len()..range.end),
-            TagEnd::Emphasis => self.body(range.end - EMPHASIS..range.end),
+            TagEnd::Strong => self.notation(range.end - BOLD.len()..range.end),
+            TagEnd::Emphasis => self.notation(range.end - EMPHASIS..range.end),
             TagEnd::Link => self.blank_after_body(range.end),
             _ => {}
         }
@@ -160,7 +163,11 @@ impl<'a> Blocks<'a> {
         let Some(body) = block.body else {
             return;
         };
-        let text = blanked(self.text, &body, block.blanks);
+        let mut blanks = block.blanks;
+        if block.kind == SegmentKind::TableCell {
+            blanks.extend(arrows(self.text, &body));
+        }
+        let text = blanked(self.text, &body, blanks);
         if text.trim().is_empty() {
             return;
         }
@@ -198,6 +205,20 @@ impl<'a> Blocks<'a> {
         }
     }
 
+    /// 強調の記法の範囲。表のセルでは空白に置き換える。
+    fn notation(&mut self, range: Range<usize>) {
+        self.body(range.clone());
+        if self.in_cell() {
+            self.blank(range);
+        }
+    }
+
+    fn in_cell(&self) -> bool {
+        self.open
+            .last()
+            .is_some_and(|block| block.kind == SegmentKind::TableCell)
+    }
+
     /// 本文の終わりから `end` までを空白にする。
     fn blank_after_body(&mut self, end: usize) {
         if let Some(block) = self.open.last_mut()
@@ -225,6 +246,14 @@ impl<'a> Blocks<'a> {
                 .collect(),
         }
     }
+}
+
+/// 範囲に現れる矢印の範囲。
+fn arrows(text: &str, body: &Range<usize>) -> Vec<Range<usize>> {
+    text[body.clone()]
+        .match_indices(ARROW)
+        .map(|(at, arrow)| body.start + at..body.start + at + arrow.len())
+        .collect()
 }
 
 /// 範囲の原文を切り出し、`blanks` の各範囲を同じバイト数の空白に置き換えた文字列。
@@ -384,6 +413,19 @@ mod tests {
         let markdown = "| 見出し | 説明 |\n|---|---|\n| 語 | 文だ。 |\n";
         assert_eq!(texts(markdown), ["見出し", "説明", "語", "文だ。"]);
         assert_eq!(kinds(markdown), [SegmentKind::TableCell; 4]);
+    }
+
+    #[test]
+    fn a_table_cell_drops_the_notation_of_bold_and_its_arrows() {
+        let markdown = "| 語 | 説明 |\n|---|---|\n| **重要だ** | 入力 → 出力だ。 |\n";
+        let cells = texts(markdown);
+        assert_eq!(cells[2], format!("{}重要だ{}", blanks(BOLD), blanks(BOLD)));
+        assert_eq!(cells[3], format!("入力 {} 出力だ。", blanks("→")));
+        assert!(rules(markdown).is_empty(), "{:?}", rules(markdown));
+        assert_eq!(
+            texts("**重要だ**と入力 → 出力。\n"),
+            ["**重要だ**と入力 → 出力。"]
+        );
     }
 
     #[test]
