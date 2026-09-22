@@ -3,6 +3,9 @@ use std::ops::Range;
 use crate::document::{Document, Segment};
 use crate::token::Token;
 
+/// 太字の記法。
+const BOLD: &str = "**";
+
 /// Segment から切り出した 1 文。`byte_range` は Segment の文字列の中の位置。
 #[derive(Debug, Clone)]
 pub struct Sentence<'a> {
@@ -54,23 +57,31 @@ pub fn ja_chars(sentences: &[Sentence]) -> usize {
     sentences.iter().map(Sentence::ja_chars).sum()
 }
 
-/// Segment の文字列を `。！？` と改行で分割する。鉤括弧・丸括弧・バッククォートの
-/// 内側では分割せず、閉じていないものは空行で解消する。日本語の文字を含まない文は返さない。
+/// Segment の文字列を `。！？` と改行で分割する。鉤括弧・丸括弧・バッククォート・
+/// 太字の内側では分割せず、閉じていないものは空行で解消する。日本語の文字を含まない文は
+/// 返さない。
 pub(crate) fn split_sentences(segment: &Segment) -> Vec<Sentence<'_>> {
     let text = &segment.text;
     let mut sentences = Vec::new();
     let mut closers: Vec<char> = Vec::new();
     let mut in_code_span = false;
+    let mut in_bold = false;
+    let mut after_marker = false;
     let mut start = 0;
     let mut line_start = 0;
     for (index, c) in text.char_indices() {
+        if after_marker {
+            after_marker = false;
+            continue;
+        }
         if c == '\n' {
             let blank_line = text[line_start..index].trim().is_empty();
             line_start = index + 1;
             if blank_line {
                 closers.clear();
                 in_code_span = false;
-            } else if !closers.is_empty() || in_code_span {
+                in_bold = false;
+            } else if !closers.is_empty() || in_code_span || in_bold {
                 continue;
             }
             push_sentence(&mut sentences, segment, start..index);
@@ -80,6 +91,11 @@ pub(crate) fn split_sentences(segment: &Segment) -> Vec<Sentence<'_>> {
         match c {
             '`' => in_code_span = !in_code_span,
             _ if in_code_span => {}
+            '*' if text[index..].starts_with(BOLD) => {
+                in_bold = !in_bold;
+                after_marker = true;
+            }
+            _ if in_bold => {}
             '「' => closers.push('」'),
             '『' => closers.push('』'),
             '（' => closers.push('）'),
@@ -177,9 +193,19 @@ mod tests {
     }
 
     #[test]
+    fn keeps_bold_whole() {
+        assert_eq!(
+            texts("**意図したものです。**エラーが出る。"),
+            ["**意図したものです。**エラーが出る。"]
+        );
+        assert_eq!(texts("太字の**強調**だ。"), ["太字の**強調**だ。"]);
+    }
+
+    #[test]
     fn a_blank_line_closes_what_is_left_open() {
         assert_eq!(texts("彼は「行く。\n\n次だ。"), ["彼は「行く。", "次だ。"]);
         assert_eq!(texts("`コード\n\n文だ。"), ["`コード", "文だ。"]);
+        assert_eq!(texts("**太字。\n\n文だ。"), ["**太字。", "文だ。"]);
     }
 
     #[test]
