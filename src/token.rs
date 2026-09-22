@@ -81,3 +81,48 @@ pub enum Goshu {
     Proper,
     Unknown,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_pos_and_the_goshu_are_json_strings() {
+        let token = Token {
+            surface: "名乗る".to_string(),
+            lemma: "名乗る".to_string(),
+            pos: Pos {
+                pos1: Pos1::Verb,
+                pos2: "一般".to_string(),
+                pos3: String::new(),
+            },
+            ctype: Some("五段-ラ行".to_string()),
+            cform: Some("終止形-一般".to_string()),
+            goshu: Goshu::Wago,
+            byte_range: 3..12,
+        };
+
+        let json = serde_json::to_string(&token).unwrap();
+        assert!(
+            json.contains(r#""pos":{"pos1":"verb","pos2":"一般","pos3":""}"#),
+            "{json}"
+        );
+        assert!(json.contains(r#""goshu":"wago""#), "{json}");
+        assert!(
+            json.contains(r#""byte_range":{"start":3,"end":12}"#),
+            "{json}"
+        );
+    }
+
+    #[test]
+    fn the_supplementary_symbol_keeps_its_name_in_json() {
+        assert_eq!(
+            serde_json::to_string(&Pos1::SupplementarySymbol).unwrap(),
+            r#""supplementary_symbol""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Goshu::Unknown).unwrap(),
+            r#""unknown""#
+        );
+    }
+}
