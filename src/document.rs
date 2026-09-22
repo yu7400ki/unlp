@@ -33,12 +33,9 @@ pub struct LineRange {
 }
 
 impl LineRange {
-    /// `start` 行から `lines` 行を占める範囲。
-    pub fn new(start: NonZeroU32, lines: NonZeroU32) -> Self {
-        Self {
-            start,
-            end: start.saturating_add(lines.get() - 1),
-        }
+    /// 開始行と終了行から作る。終了が開始を下回るときは `None`。
+    pub fn new(start: NonZeroU32, end: NonZeroU32) -> Option<Self> {
+        (end >= start).then_some(Self { start, end })
     }
 
     pub fn start(self) -> NonZeroU32 {
@@ -61,4 +58,26 @@ pub enum SegmentKind {
     StringLiteral,
     CommitSubject,
     CommitBody,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(number: u32) -> NonZeroU32 {
+        NonZeroU32::new(number).unwrap()
+    }
+
+    #[test]
+    fn the_range_keeps_both_ends() {
+        let range = LineRange::new(line(2), line(5)).unwrap();
+        assert_eq!(range.start().get(), 2);
+        assert_eq!(range.end().get(), 5);
+        assert_eq!(LineRange::new(line(3), line(3)).unwrap().end().get(), 3);
+    }
+
+    #[test]
+    fn an_end_before_the_start_is_rejected() {
+        assert_eq!(LineRange::new(line(3), line(2)), None);
+    }
 }

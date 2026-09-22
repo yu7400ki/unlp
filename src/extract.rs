@@ -7,13 +7,9 @@ pub const STDIN_NAME: &str = "<stdin>";
 
 /// テキスト全体を 1 つの Prose Segment とする文書。`name` が Segment の位置の path になる。
 pub fn text_document(name: String, text: &str) -> Document {
-    let lines = u32::try_from(text.lines().count()).unwrap_or(u32::MAX);
     let origin = Origin {
         path: name.clone(),
-        lines: LineRange::new(
-            NonZeroU32::MIN,
-            NonZeroU32::new(lines).unwrap_or(NonZeroU32::MIN),
-        ),
+        lines: whole_text(text),
         commit: None,
     };
     Document {
@@ -24,6 +20,13 @@ pub fn text_document(name: String, text: &str) -> Document {
             kind: SegmentKind::Prose,
         }],
     }
+}
+
+/// 1 行目から最終行までの範囲。
+fn whole_text(text: &str) -> LineRange {
+    let count = u32::try_from(text.lines().count()).unwrap_or(u32::MAX);
+    let last = NonZeroU32::new(count).unwrap_or(NonZeroU32::MIN);
+    LineRange::new(NonZeroU32::MIN, last).expect("最終行は 1 行目を下回らない")
 }
 
 #[cfg(test)]

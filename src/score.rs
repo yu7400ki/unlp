@@ -135,7 +135,7 @@ mod tests {
     fn origin() -> Origin {
         Origin {
             path: "t".to_string(),
-            lines: LineRange::new(NonZeroU32::MIN, NonZeroU32::MIN),
+            lines: LineRange::new(NonZeroU32::MIN, NonZeroU32::MIN).unwrap(),
             commit: None,
         }
     }

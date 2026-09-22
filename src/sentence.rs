@@ -126,7 +126,7 @@ mod tests {
             text: text.to_string(),
             origin: Origin {
                 path: "t".to_string(),
-                lines: LineRange::new(NonZeroU32::MIN, NonZeroU32::MIN),
+                lines: LineRange::new(NonZeroU32::MIN, NonZeroU32::MIN).unwrap(),
                 commit: None,
             },
             kind: SegmentKind::Prose,
