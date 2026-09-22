@@ -99,6 +99,13 @@ fn rules_lists_the_rule_with_its_layer_weight_and_heading() {
 }
 
 #[test]
+fn the_rule_book_has_no_findings() {
+    let report = json(unlp().args(["check", "skills/", "--json"]));
+    let by_rule = report["total"]["by_rule"].as_object().unwrap();
+    assert!(by_rule.is_empty(), "{by_rule:?}");
+}
+
+#[test]
 fn check_walks_directories_and_skips_excluded_ones() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "含まれる文だ。").unwrap();
