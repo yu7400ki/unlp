@@ -189,7 +189,7 @@ fn tokens<'a>(sentences: &'a [Sentence]) -> impl Iterator<Item = &'a Token> {
     sentences.iter().flat_map(Sentence::tokens)
 }
 
-/// 文末の助動詞の連なりに です または ます があるか、文末の動詞が くださる であるか。
+/// 文末の助動詞の連なりに です または ます があるか、文末の動詞が くださる（下さる）であるか。
 /// 記号と助詞は飛ばす。
 fn is_polite(sentence: &Sentence) -> bool {
     let mut tail = sentence
@@ -198,7 +198,10 @@ fn is_polite(sentence: &Sentence) -> bool {
         .rev()
         .skip_while(|token| is_trailing(token))
         .peekable();
-    if tail.peek().is_some_and(|token| is_verb(token, "くださる")) {
+    if tail
+        .peek()
+        .is_some_and(|token| is_verb(token, "くださる") || is_verb(token, "下さる"))
+    {
         return true;
     }
     tail.take_while(|token| token.pos.pos1 == Pos1::AuxVerb)
@@ -272,6 +275,7 @@ mod tests {
     fn a_request_is_polite() {
         assert_eq!(measures("設定を確認してください。").polite_ratio, Some(1.0));
         assert_eq!(measures("ご確認ください。").polite_ratio, Some(1.0));
+        assert_eq!(measures("設定を確認して下さい。").polite_ratio, Some(1.0));
         assert_eq!(measures("設定を確認してください。").plain_ratio, Some(0.0));
     }
 
