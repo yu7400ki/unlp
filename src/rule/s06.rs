@@ -1,4 +1,3 @@
-use crate::rule::predicate::is_comma;
 use crate::rule::{Context, DocumentRule, Finding, Layer, RuleId, run};
 use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
@@ -9,9 +8,6 @@ const CONJUNCTIONS: &str = "conjunctions";
 
 /// 抜粋で接続詞を隔てる読点。
 const SEPARATOR: &str = "、";
-
-/// 直後の読点を伴うときだけ接続詞として数える語。
-const WITH_COMMA: [&str; 4] = ["また", "一方", "ただし", "なお"];
 
 /// 文頭の接続詞の連打。
 pub struct LeadingConjunction;
@@ -53,9 +49,7 @@ fn leading<'a>(sentence: &Sentence, context: &'a Context) -> Option<&'a str> {
         .find(|conjunction| is_leading(sentence, conjunction))
 }
 
-/// 文頭の接続詞であるか。`WITH_COMMA` の語は直後の Token が読点のときだけ、1 つの Token に
-/// なる語はその品詞が接続詞か副詞のときだけ、複数の Token に分かれる語は後ろに別の形を
-/// 作る Token が続かないときだけ接続詞とする。
+/// 語が文の先頭に Token の境界で一致し、その直後で新しい節が始まるか。
 fn is_leading(sentence: &Sentence, conjunction: &str) -> bool {
     if !sentence.text().starts_with(conjunction) {
         return false;
@@ -64,14 +58,7 @@ fn is_leading(sentence: &Sentence, conjunction: &str) -> bool {
     let Some(length) = head_length(tokens, conjunction) else {
         return false;
     };
-    let next = tokens.get(length);
-    if WITH_COMMA.contains(&conjunction) {
-        return next.is_some_and(is_comma);
-    }
-    if length == 1 {
-        return matches!(tokens[0].pos.pos1, Pos1::Conjunction | Pos1::Adverb);
-    }
-    next.is_none_or(|token| !continues(token))
+    tokens.get(length).is_none_or(|token| !continues(token))
 }
 
 /// 文頭から語を占める Token の数。語が Token の境界で終わらないときは `None`。
@@ -82,9 +69,12 @@ fn head_length(tokens: &[Token], conjunction: &str) -> Option<usize> {
         .map(|index| index + 1)
 }
 
-/// 前の語に続いて別の形を作る Token。助詞は名詞句にし、動詞は継続の形にする。
+/// 前の語に続いて 1 つの文節を作る Token。
 fn continues(token: &Token) -> bool {
-    matches!(token.pos.pos1, Pos1::Particle | Pos1::Verb)
+    matches!(
+        token.pos.pos1,
+        Pos1::Particle | Pos1::AuxVerb | Pos1::Verb | Pos1::Adjective | Pos1::Suffix
+    )
 }
 
 #[cfg(test)]
@@ -128,29 +118,48 @@ mod tests {
         );
         assert_eq!(
             excerpts(
-                "さらに数える。また、並べる。したがって規則が残る。規則を直す。なお、数える。ただし、並べる。その結果、規則が残る。"
+                "さらに規則を数える。また、並べる。したがって規則が残る。規則を直す。なお、数える。ただし、並べる。その結果、規則が残る。"
             ),
             ["さらに、また、したがって", "なお、ただし、その結果"]
         );
     }
 
-    #[test]
-    fn a_conjunction_without_its_comma_is_not_a_conjunction() {
-        assert!(
-            excerpts("また規則を数える。一方で規則を並べる。なお規則が残る。ただし規則は減る。")
-                .is_empty()
-        );
+    /// 同じ文を 3 つ並べた文書が連打になるか。
+    fn is_a_run(sentence: &str) -> bool {
+        !excerpts(&sentence.repeat(3)).is_empty()
     }
 
     #[test]
-    fn a_noun_phrase_at_the_head_is_not_a_conjunction() {
-        assert!(excerpts(&"その結果を表に書く。".repeat(3)).is_empty());
-        assert!(excerpts(&"そのために必要な設定を数える。".repeat(3)).is_empty());
+    fn a_new_clause_after_the_word_makes_it_a_conjunction() {
+        let missing: Vec<&str> = [
+            "さらに、直す。",
+            "これにより未返却の接続が溜まる。",
+            "したがって、直す。",
+            "また、直す。",
+        ]
+        .into_iter()
+        .filter(|sentence| !is_a_run(sentence))
+        .collect();
+        assert!(missing.is_empty(), "{missing:?}");
     }
 
     #[test]
-    fn a_continuous_form_at_the_head_is_not_a_conjunction() {
-        assert!(excerpts(&"加えている項目を確認する。".repeat(3)).is_empty());
+    fn a_word_that_the_sentence_continues_is_not_a_conjunction() {
+        let counted: Vec<&str> = [
+            "さらに直す。",
+            "さらに速い道を選ぶ。",
+            "そのためです。",
+            "その結果を表に書く。",
+            "そのために必要な設定を数える。",
+            "これにより得た値を使う。",
+            "加えている項目を確認する。",
+            "また来る。",
+            "一方的に決める。",
+        ]
+        .into_iter()
+        .filter(|sentence| is_a_run(sentence))
+        .collect();
+        assert!(counted.is_empty(), "{counted:?}");
     }
 
     #[test]
