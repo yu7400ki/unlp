@@ -82,6 +82,16 @@ mod tests {
     }
 
     #[test]
+    fn a_procedure_of_requests_is_not_a_mixture() {
+        let text = format!(
+            "{}{}",
+            "設定を確認してください。".repeat(7),
+            "設定を保存します。".repeat(3)
+        );
+        assert!(excerpts(&text).is_empty(), "{text}");
+    }
+
+    #[test]
     fn a_polite_document_of_past_and_negative_forms_is_not_a_mixture() {
         assert!(
             excerpts(

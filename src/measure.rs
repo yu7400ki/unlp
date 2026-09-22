@@ -32,7 +32,7 @@ impl Measures {
     }
 }
 
-/// 句点で終わる文のうち、文末の助動詞が です か ます であるものの割合。
+/// 句点で終わる文のうち敬体で終わるものの割合。
 pub fn polite_ratio(sentences: &[Sentence]) -> Option<f64> {
     ratio(
         terminated(sentences)
@@ -156,14 +156,19 @@ fn tokens<'a>(sentences: &'a [Sentence]) -> impl Iterator<Item = &'a Token> {
     sentences.iter().flat_map(Sentence::tokens)
 }
 
-/// 文末の助動詞に です か ます があるか。記号と助詞は飛ばす。
+/// 文末の助動詞の連なりに です または ます があるか、文末の動詞が くださる であるか。
+/// 記号と助詞は飛ばす。
 fn is_polite(sentence: &Sentence) -> bool {
-    sentence
+    let mut tail = sentence
         .tokens()
         .iter()
         .rev()
         .skip_while(|token| is_trailing(token))
-        .take_while(|token| token.pos.pos1 == Pos1::AuxVerb)
+        .peekable();
+    if tail.peek().is_some_and(|token| is_verb(token, "くださる")) {
+        return true;
+    }
+    tail.take_while(|token| token.pos.pos1 == Pos1::AuxVerb)
         .any(|token| matches!(token.lemma.as_str(), "です" | "ます"))
 }
 
@@ -226,6 +231,18 @@ mod tests {
         assert_eq!(measures("動作する。").polite_ratio, Some(0.0));
         assert_eq!(measures("これは規則だ。").polite_ratio, Some(0.0));
         assert_eq!(measures("動作します。動作する。").polite_ratio, Some(0.5));
+    }
+
+    #[test]
+    fn a_request_is_polite() {
+        assert_eq!(measures("設定を確認してください。").polite_ratio, Some(1.0));
+        assert_eq!(measures("ご確認ください。").polite_ratio, Some(1.0));
+        assert_eq!(measures("設定を確認してください。").plain_ratio, Some(0.0));
+    }
+
+    #[test]
+    fn a_volitional_polite_form_is_polite() {
+        assert_eq!(measures("設定を直しましょう。").polite_ratio, Some(1.0));
     }
 
     #[test]
