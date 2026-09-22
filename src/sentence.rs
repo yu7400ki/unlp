@@ -4,7 +4,7 @@ use crate::document::{Document, Segment};
 use crate::token::Token;
 
 /// 太字の記法。
-const BOLD: &str = "**";
+pub(crate) const BOLD: &str = "**";
 
 /// Segment から切り出した 1 文。`byte_range` は Segment の文字列の中の位置。
 #[derive(Debug, Clone)]

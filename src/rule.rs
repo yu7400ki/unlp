@@ -9,6 +9,9 @@ use crate::sentence::{self, Sentence};
 
 mod context;
 mod d02;
+mod f01;
+mod f02;
+mod f03;
 #[cfg(test)]
 pub(crate) mod harness;
 mod s01;
@@ -209,6 +212,9 @@ pub fn sentence_rules() -> Vec<Box<dyn SentenceRule>> {
         Box::new(s04::FirstPerson),
         Box::new(s05::NegativeContrast),
         Box::new(d02::PredicatelessFragment),
+        Box::new(f01::ClosingFormula),
+        Box::new(f02::BoldConclusion),
+        Box::new(f03::BoldInProse),
     ]
 }
 
