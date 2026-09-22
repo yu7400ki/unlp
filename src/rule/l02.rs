@@ -10,7 +10,7 @@ const HINT: &str = "慣習語に置き換える: デフォルトでは、エラ�
 const PHRASES: &str = "phrases";
 const MACHINES: &str = "machines";
 
-/// 助数詞と格助詞「を」の間に挟む Token の上限。
+/// 「の」の次から格助詞「を」までに挟む Token の上限。
 const GAP: usize = 6;
 
 /// 辞書の第一義と逐語訳。
