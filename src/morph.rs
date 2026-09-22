@@ -16,7 +16,7 @@ const POS2: &str = "part_of_speech_subcategory_1";
 const POS3: &str = "part_of_speech_subcategory_2";
 const CTYPE: &str = "conjugation_type";
 const CFORM: &str = "conjugation_form";
-const LEMMA: &str = "lexeme";
+const LEMMA: &str = "orthographic_base_form";
 const GOSHU: &str = "word_type";
 
 /// Token の欄に写す辞書の列。
@@ -204,6 +204,15 @@ mod tests {
         assert_eq!(kango.pos.pos1, Pos1::Noun);
         assert_eq!(kango.goshu, Goshu::Kango);
         assert_eq!(find(&tokens, "ウィンドウ").goshu, Goshu::Gairai);
+    }
+
+    #[test]
+    fn the_lemma_is_the_base_form_as_it_is_written() {
+        let tokens = tokens("ウィンドウを表示した。東京でできることをする。");
+        assert_eq!(find(&tokens, "ウィンドウ").lemma, "ウィンドウ");
+        assert_eq!(find(&tokens, "東京").lemma, "東京");
+        assert_eq!(find(&tokens, "できる").lemma, "できる");
+        assert_eq!(find(&tokens, "し").lemma, "する");
     }
 
     #[test]
