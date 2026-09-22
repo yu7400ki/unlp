@@ -7,8 +7,7 @@ use crate::sentence::Sentence;
 /// 抜粋に残す文字数。
 const LIMIT: usize = 40;
 
-/// 文の文字列に現れた句の範囲。始まりの順に並び、重なる一致は前の範囲だけを残す。同じ位置に
-/// 始まる一致は長い方を採る。
+/// 文の文字列に現れた句の範囲。始まりの順に並び、重なる一致は前の範囲だけを残す。
 pub fn matches<'a>(text: &str, phrases: impl IntoIterator<Item = &'a str>) -> Vec<Range<usize>> {
     let mut found = Vec::new();
     for phrase in phrases {
@@ -22,14 +21,7 @@ pub fn matches<'a>(text: &str, phrases: impl IntoIterator<Item = &'a str>) -> Ve
             found.push(start..from);
         }
     }
-    found.sort_by_key(|range| (range.start, Reverse(range.end)));
-    let mut ranges: Vec<Range<usize>> = Vec::new();
-    for range in found {
-        if ranges.last().is_none_or(|last| last.end <= range.start) {
-            ranges.push(range);
-        }
-    }
-    ranges
+    disjoint(found)
 }
 
 /// 文の中の範囲の抜粋。連続する空白を 1 つに畳み、`LIMIT` 文字を超える分は落とす。
@@ -49,24 +41,52 @@ fn excerpt(text: &str, range: Range<usize>) -> String {
     excerpt
 }
 
-/// 文の中の範囲を抜粋とする指摘。範囲の始まりの順に並ぶ。
+/// 文の中の範囲を抜粋とする指摘。範囲の始まりの順に並び、重なる範囲は前の範囲だけを残す。
 pub fn findings_at(
     rule: RuleId,
     sentence: &Sentence,
     ranges: Vec<Range<usize>>,
     hint: &'static str,
 ) -> Vec<Finding> {
-    sorted(ranges)
+    findings_around(rule, sentence, ranges, 0, hint)
+}
+
+/// 文の中の範囲を、前後 `around` 文字を添えた抜粋とする指摘。重なりの判定は添える前の範囲で
+/// 行う。
+pub fn findings_around(
+    rule: RuleId,
+    sentence: &Sentence,
+    ranges: Vec<Range<usize>>,
+    around: usize,
+    hint: &'static str,
+) -> Vec<Finding> {
+    let text = sentence.text();
+    disjoint(ranges)
         .into_iter()
         .map(|range| {
             Finding::new(
                 rule,
                 sentence.segment().origin.clone(),
-                excerpt(sentence.text(), range),
+                excerpt(text, with_surroundings(text, range, around)),
                 hint,
             )
         })
         .collect()
+}
+
+/// 前後 `around` 文字を含めて広げた範囲。
+fn with_surroundings(text: &str, range: Range<usize>, around: usize) -> Range<usize> {
+    let start = text[..range.start]
+        .char_indices()
+        .rev()
+        .take(around)
+        .last()
+        .map_or(range.start, |(index, _)| index);
+    let end = text[range.end..]
+        .char_indices()
+        .nth(around)
+        .map_or(text.len(), |(index, _)| range.end + index);
+    start..end
 }
 
 /// 文の文字列に現れた句を抜粋とする指摘。
@@ -79,9 +99,16 @@ pub fn findings<'a>(
     findings_at(rule, sentence, matches(sentence.text(), phrases), hint)
 }
 
-fn sorted(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
-    ranges.sort_by_key(|range| (range.start, range.end));
-    ranges
+/// 始まりの順に並べ、重なる範囲は前の範囲だけを残す。同じ位置に始まる範囲は長い方を採る。
+fn disjoint(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
+    ranges.sort_by_key(|range| (range.start, Reverse(range.end)));
+    let mut kept: Vec<Range<usize>> = Vec::new();
+    for range in ranges {
+        if kept.last().is_none_or(|last| last.end <= range.start) {
+            kept.push(range);
+        }
+    }
+    kept
 }
 
 #[cfg(test)]

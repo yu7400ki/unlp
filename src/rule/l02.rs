@@ -140,6 +140,10 @@ mod tests {
     #[test]
     fn overlapping_phrases_are_one_finding() {
         assert_eq!(excerpts("直感的な意味論を導入する。"), ["直感的な意味論"]);
+        assert_eq!(
+            excerpts("8つの意味論を持つマシンだ。"),
+            ["8つの意味論を持つマシン"]
+        );
     }
 
     #[test]

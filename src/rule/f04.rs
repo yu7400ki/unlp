@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::Sentence;
 
@@ -38,30 +36,9 @@ impl SentenceRule for DashAndArrow {
             .match_indices(|c: char| c == DASH || ARROWS.contains(&c))
             .map(|(index, mark)| index..index + mark.len())
             .filter(|mark| !dashes.iter().any(|dash| dash.contains(&mark.start)));
-        let ranges = dashes
-            .iter()
-            .cloned()
-            .chain(marks)
-            .map(|range| with_surroundings(text, range))
-            .collect();
-        surface::findings_at(ID, sentence, ranges, HINT)
+        let ranges = dashes.iter().cloned().chain(marks).collect();
+        surface::findings_around(ID, sentence, ranges, AROUND, HINT)
     }
-}
-
-/// 前後の文字を含めて広げた範囲。
-fn with_surroundings(text: &str, range: Range<usize>) -> Range<usize> {
-    let start = text[..range.start]
-        .char_indices()
-        .rev()
-        .take(AROUND)
-        .last()
-        .map_or(range.start, |(index, _)| index);
-    let end = text[range.end..]
-        .char_indices()
-        .take(AROUND)
-        .last()
-        .map_or(range.end, |(index, c)| range.end + index + c.len_utf8());
-    start..end
 }
 
 #[cfg(test)]
