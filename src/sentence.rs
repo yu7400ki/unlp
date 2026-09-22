@@ -45,7 +45,7 @@ pub fn is_japanese(c: char) -> bool {
 }
 
 /// 文書のすべての Segment を文に分割する。
-pub fn split_document(document: &Document) -> Vec<Sentence<'_>> {
+pub(crate) fn split_document(document: &Document) -> Vec<Sentence<'_>> {
     document.segments.iter().flat_map(split_sentences).collect()
 }
 
@@ -56,7 +56,7 @@ pub fn ja_chars(sentences: &[Sentence]) -> usize {
 
 /// Segment の文字列を `。！？` と改行で分割する。鉤括弧・丸括弧・バッククォートの
 /// 内側では分割せず、閉じていないものは空行で解消する。日本語の文字を含まない文は返さない。
-pub fn split_sentences(segment: &Segment) -> Vec<Sentence<'_>> {
+pub(crate) fn split_sentences(segment: &Segment) -> Vec<Sentence<'_>> {
     let text = &segment.text;
     let mut sentences = Vec::new();
     let mut closers: Vec<char> = Vec::new();

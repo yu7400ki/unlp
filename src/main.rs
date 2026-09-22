@@ -8,7 +8,7 @@ use unlp::extract::{self, STDIN_NAME};
 use unlp::input;
 use unlp::morph::Analyzer;
 use unlp::score::{DEFAULT_FLOOR, DocumentScore, Measures, Report, Score, ScoreMode, Total};
-use unlp::sentence::{self, is_japanese};
+use unlp::sentence::is_japanese;
 use unlp::{Document, Finding};
 
 /// 日本語の文章に残る AI の癖を検出して採点する。
@@ -73,10 +73,7 @@ fn run() -> Result<bool> {
     let analyzer = Analyzer::new()?;
     let mut scores = Vec::new();
     for document in &documents {
-        let mut sentences = sentence::split_document(document);
-        for sentence in &mut sentences {
-            analyzer.analyze(sentence);
-        }
+        let sentences = analyzer.analyze_document(document);
         scores.push(DocumentScore {
             name: document.name.clone(),
             score: Score::new(&sentences, Vec::new(), Measures::default(), DEFAULT_FLOOR),

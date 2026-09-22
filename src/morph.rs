@@ -7,7 +7,8 @@ use lindera::segmenter::Segmenter;
 use lindera::token::Token as LinderaToken;
 use thiserror::Error;
 
-use crate::sentence::Sentence;
+use crate::document::Document;
+use crate::sentence::{self, Sentence};
 use crate::token::{Goshu, Pos, Pos1, Token};
 
 const POS1: &str = "part_of_speech";
@@ -54,9 +55,18 @@ impl Analyzer {
         })
     }
 
+    /// 文書を文に分割し、解析した文を返す。
+    pub fn analyze_document<'a>(&self, document: &'a Document) -> Vec<Sentence<'a>> {
+        let mut sentences = sentence::split_document(document);
+        for sentence in &mut sentences {
+            self.analyze(sentence);
+        }
+        sentences
+    }
+
     /// 文を解析して Token 列を持たせる。書字形基本形を持たない語は表層形を `lemma` にし、
     /// 隣り合う記号-文字の並びは 1 つの名詞にする。
-    pub fn analyze(&self, sentence: &mut Sentence) {
+    fn analyze(&self, sentence: &mut Sentence) {
         let mut analyzed = self
             .segmenter
             .segment(Cow::Borrowed(sentence.text()))
@@ -210,6 +220,20 @@ mod tests {
             .iter()
             .find(|token| token.surface == surface)
             .unwrap_or_else(|| panic!("{surface} が無い: {}", surfaces()))
+    }
+
+    #[test]
+    fn a_document_yields_analyzed_sentences() {
+        let document = Document {
+            name: "t".to_string(),
+            segments: vec![segment("型が名乗る。"), segment("次の文だ。設定を比べる。")],
+        };
+
+        let sentences = ANALYZER.analyze_document(&document);
+        assert_eq!(sentences.len(), 3);
+        for sentence in &sentences {
+            assert!(!sentence.tokens().is_empty(), "{}", sentence.text());
+        }
     }
 
     #[test]
