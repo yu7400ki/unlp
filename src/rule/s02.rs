@@ -17,7 +17,7 @@ impl SentenceRule for LeadingDemonstrative {
         "S02"
     }
 
-    /// 文頭の「これ」「それ」に係助詞が続く箇所。複数の接尾辞「ら」を挟む形も含む。
+    /// 文頭の「これ」「それ」に係助詞が続く箇所。複数を表す接尾辞「ら」を挟む形も含む。
     fn check(&self, sentence: &Sentence, _context: &Context) -> Vec<Finding> {
         let tokens = sentence.tokens();
         let Some(head) = tokens.first().filter(|token| is_demonstrative(token)) else {
