@@ -164,12 +164,13 @@ fn print_findings(findings: &[Finding]) {
 /// 規則の ID、層、重み、規則集の見出しを 1 行ずつ出力する。
 fn print_rules(context: &rule::Context) {
     for (rule, anchor) in rule::registered() {
-        let weight = context.weights().get(&rule).copied().unwrap_or_default();
-        println!(
-            "{rule}  {}  {weight:.2}  {}",
-            rule.layer().name(),
-            rule::doc_heading(anchor).unwrap_or_default()
-        );
+        let weight = context
+            .weights()
+            .get(&rule)
+            .copied()
+            .expect("一覧にある規則には既定の重みがある");
+        let heading = rule::doc_heading(anchor).expect("一覧にある規則の anchor は見出しを指す");
+        println!("{rule}  {}  {weight:.2}  {heading}", rule.layer().name());
     }
 }
 
