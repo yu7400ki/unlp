@@ -1,4 +1,3 @@
-use crate::measure::FinalPredicates;
 use crate::rule::{Context, DocumentRule, Finding, Layer, RuleId};
 use crate::sentence::Sentence;
 
@@ -28,8 +27,8 @@ impl DocumentRule for FinalWagoRatio {
 
     /// 文末の述語が `MINIMUM` 個以上あり、和語率が `THRESHOLD` を超える文書。抜粋は
     /// 文末の和語の動詞を原形と件数で頻度順に列挙したもの。
-    fn check(&self, sentences: &[Sentence], _context: &Context) -> Vec<Finding> {
-        let predicates = FinalPredicates::of(sentences);
+    fn check(&self, sentences: &[Sentence], context: &Context) -> Vec<Finding> {
+        let predicates = context.final_predicates();
         let exceeds = predicates.total() >= MINIMUM
             && predicates
                 .wago_ratio()
@@ -73,6 +72,14 @@ mod tests {
     fn a_document_of_wago_predicates_is_a_finding() {
         assert_eq!(excerpts(&document(5, 0)), ["比べる 5"]);
         assert_eq!(excerpts(&document(8, 2)), ["比べる 8"]);
+    }
+
+    #[test]
+    fn a_context_without_the_measurement_is_not_judged() {
+        assert!(
+            harness::document_excerpts_with(&FinalWagoRatio, &harness::CONTEXT, &document(5, 0))
+                .is_empty()
+        );
     }
 
     #[test]

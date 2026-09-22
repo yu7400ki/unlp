@@ -1,4 +1,3 @@
-use crate::measure;
 use crate::rule::{Context, DocumentRule, Finding, Layer, RuleId};
 use crate::sentence::Sentence;
 
@@ -21,9 +20,10 @@ impl DocumentRule for MixedRegister {
     }
 
     /// 敬体率と常体率がともに `MINIMUM` 以上である文書。抜粋は両方の割合。
-    fn check(&self, sentences: &[Sentence], _context: &Context) -> Vec<Finding> {
-        let polite = measure::polite_ratio(sentences).unwrap_or_default();
-        let plain = measure::plain_ratio(sentences).unwrap_or_default();
+    fn check(&self, sentences: &[Sentence], context: &Context) -> Vec<Finding> {
+        let measures = context.measures();
+        let polite = measures.polite_ratio.unwrap_or_default();
+        let plain = measures.plain_ratio.unwrap_or_default();
         let Some(first) = sentences
             .first()
             .filter(|_| polite >= MINIMUM && plain >= MINIMUM)
@@ -62,6 +62,14 @@ mod tests {
         assert_eq!(excerpts(&document(5, 5)), ["敬体 0.50 常体 0.50"]);
         assert_eq!(excerpts(&document(8, 2)), ["敬体 0.80 常体 0.20"]);
         assert_eq!(excerpts(&document(2, 8)), ["敬体 0.20 常体 0.80"]);
+    }
+
+    #[test]
+    fn a_context_without_the_measurement_is_not_judged() {
+        assert!(
+            harness::document_excerpts_with(&MixedRegister, &harness::CONTEXT, &document(5, 5))
+                .is_empty()
+        );
     }
 
     #[test]

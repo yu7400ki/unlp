@@ -18,22 +18,55 @@ pub struct Measures {
     pub ga_per_sentence: Option<f64>,
 }
 
-impl Measures {
+/// 文書 1 つの計測。規則と出力はここから値を読み、計測をやり直さない。
+#[derive(Debug, Clone, Default)]
+pub struct Measurement {
+    measures: Measures,
+    final_predicates: FinalPredicates,
+}
+
+impl Measurement {
     /// 解析済みの文から計測する。
     pub fn of(sentences: &[Sentence]) -> Self {
+        let final_predicates = FinalPredicates::of(sentences);
         Self {
-            polite_ratio: polite_ratio(sentences),
-            plain_ratio: plain_ratio(sentences),
-            wago_noun_ratio: wago_noun_ratio(sentences),
-            wago_verb_ratio: wago_verb_ratio(sentences),
-            final_wago_ratio: FinalPredicates::of(sentences).wago_ratio(),
-            ga_per_sentence: ga_per_sentence(sentences),
+            measures: Measures {
+                polite_ratio: polite_ratio(sentences),
+                plain_ratio: plain_ratio(sentences),
+                wago_noun_ratio: wago_noun_ratio(sentences),
+                wago_verb_ratio: wago_verb_ratio(sentences),
+                final_wago_ratio: final_predicates.wago_ratio(),
+                ga_per_sentence: ga_per_sentence(sentences),
+            },
+            final_predicates,
+        }
+    }
+
+    /// 出力に載せる参考値。
+    pub fn measures(&self) -> &Measures {
+        &self.measures
+    }
+
+    /// 文末の述語の集計。
+    pub fn final_predicates(&self) -> &FinalPredicates {
+        &self.final_predicates
+    }
+
+    /// 敬体率だけを持つ計測。
+    #[cfg(test)]
+    pub(crate) fn of_polite_ratio(ratio: f64) -> Self {
+        Self {
+            measures: Measures {
+                polite_ratio: Some(ratio),
+                ..Measures::default()
+            },
+            final_predicates: FinalPredicates::default(),
         }
     }
 }
 
 /// 句点で終わる文のうち敬体で終わるものの割合。
-pub fn polite_ratio(sentences: &[Sentence]) -> Option<f64> {
+fn polite_ratio(sentences: &[Sentence]) -> Option<f64> {
     ratio(
         terminated(sentences)
             .filter(|sentence| is_polite(sentence))
@@ -43,7 +76,7 @@ pub fn polite_ratio(sentences: &[Sentence]) -> Option<f64> {
 }
 
 /// 句点で終わる文のうち、述語を持ち敬体でないものの割合。
-pub fn plain_ratio(sentences: &[Sentence]) -> Option<f64> {
+fn plain_ratio(sentences: &[Sentence]) -> Option<f64> {
     ratio(
         terminated(sentences)
             .filter(|sentence| sentence.has_predicate() && !is_polite(sentence))
@@ -53,7 +86,7 @@ pub fn plain_ratio(sentences: &[Sentence]) -> Option<f64> {
 }
 
 /// 普通名詞に占める和語の割合。
-pub fn wago_noun_ratio(sentences: &[Sentence]) -> Option<f64> {
+fn wago_noun_ratio(sentences: &[Sentence]) -> Option<f64> {
     let nouns = tokens(sentences).filter(|token| is_common_noun(token));
     let (wago, all) = nouns.fold((0, 0), |(wago, all), noun| {
         (wago + usize::from(noun.goshu == Goshu::Wago), all + 1)
@@ -62,7 +95,7 @@ pub fn wago_noun_ratio(sentences: &[Sentence]) -> Option<f64> {
 }
 
 /// 和語の一般動詞と サ変可能名詞＋する の合計に占める和語の動詞の割合。
-pub fn wago_verb_ratio(sentences: &[Sentence]) -> Option<f64> {
+fn wago_verb_ratio(sentences: &[Sentence]) -> Option<f64> {
     let mut wago = 0;
     let mut sahen = 0;
     for sentence in sentences {
@@ -79,7 +112,7 @@ pub fn wago_verb_ratio(sentences: &[Sentence]) -> Option<f64> {
 }
 
 /// 1 文あたりの格助詞「が」の数。
-pub fn ga_per_sentence(sentences: &[Sentence]) -> Option<f64> {
+fn ga_per_sentence(sentences: &[Sentence]) -> Option<f64> {
     let ga = tokens(sentences)
         .filter(|token| is_case_particle(token, "が"))
         .count();
@@ -214,7 +247,9 @@ mod tests {
     use crate::rule::harness;
 
     fn measures(text: &str) -> Measures {
-        harness::with_sentences(text, Measures::of)
+        harness::with_sentences(text, |sentences| {
+            Measurement::of(sentences).measures().clone()
+        })
     }
 
     fn final_predicates(text: &str) -> FinalPredicates {

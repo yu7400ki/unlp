@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::measure::{FinalPredicates, Measurement, Measures};
 use crate::rule::{Layer, RuleId};
 
 const WEIGHTS: &str = include_str!("../../data/weights.toml");
@@ -69,7 +70,7 @@ impl WordList {
 pub struct Context {
     weights: BTreeMap<RuleId, f64>,
     lists: BTreeMap<RuleId, WordList>,
-    polite_ratio: f64,
+    measurement: Measurement,
 }
 
 impl Context {
@@ -81,7 +82,7 @@ impl Context {
                 .into_iter()
                 .map(|(rule, source)| (rule, word_list(source)))
                 .collect(),
-            polite_ratio: 0.0,
+            measurement: Measurement::default(),
         }
     }
 
@@ -95,15 +96,27 @@ impl Context {
         self.lists.get(&rule).unwrap_or(&EMPTY)
     }
 
-    /// 敬体の文書か。敬体だけで数える規則がこれで自身の適用を決める。
-    pub fn is_polite(&self) -> bool {
-        self.polite_ratio >= POLITE
+    /// 文書の参考値。
+    pub fn measures(&self) -> &Measures {
+        self.measurement.measures()
     }
 
-    /// 文書の敬体率を持たせた Context。
-    pub fn with_polite_ratio(&self, polite_ratio: f64) -> Self {
+    /// 文書の文末の述語。
+    pub fn final_predicates(&self) -> &FinalPredicates {
+        self.measurement.final_predicates()
+    }
+
+    /// 敬体の文書か。敬体だけで数える規則がこれで自身の適用を決める。
+    pub fn is_polite(&self) -> bool {
+        self.measures()
+            .polite_ratio
+            .is_some_and(|ratio| ratio >= POLITE)
+    }
+
+    /// 文書の計測を持たせた Context。
+    pub fn for_document(&self, measurement: Measurement) -> Self {
         Self {
-            polite_ratio,
+            measurement,
             ..self.clone()
         }
     }
@@ -143,6 +156,11 @@ fn word_list(source: &str) -> WordList {
 mod tests {
     use super::*;
     use crate::rule::registered;
+
+    /// 敬体率だけを計測した Context。
+    fn polite(ratio: f64) -> Context {
+        Context::defaults().for_document(Measurement::of_polite_ratio(ratio))
+    }
 
     #[test]
     fn the_defaults_weigh_every_registered_rule() {
@@ -184,23 +202,22 @@ mod tests {
 
     #[test]
     fn a_document_is_plain_until_its_polite_ratio_is_measured() {
-        assert!(!Context::defaults().is_polite());
+        let context = Context::defaults();
+        assert!(!context.is_polite());
+        assert_eq!(context.measures().polite_ratio, None);
+        assert_eq!(context.final_predicates().total(), 0);
     }
 
     #[test]
     fn the_polite_ratio_decides_the_register_of_the_document() {
-        assert!(Context::defaults().with_polite_ratio(POLITE).is_polite());
-        assert!(
-            !Context::defaults()
-                .with_polite_ratio(POLITE - 0.01)
-                .is_polite()
-        );
+        assert!(polite(POLITE).is_polite());
+        assert!(!polite(POLITE - 0.01).is_polite());
     }
 
     #[test]
-    fn the_polite_ratio_of_a_document_keeps_the_words_and_the_weights() {
-        let context = Context::defaults().with_polite_ratio(0.75);
-        assert!(context.is_polite());
+    fn the_measurement_of_a_document_keeps_the_words_and_the_weights() {
+        let context = polite(0.75);
+        assert_eq!(context.measures().polite_ratio, Some(0.75));
         assert!(
             context
                 .list(RuleId::new(Layer::Structure, 1))
