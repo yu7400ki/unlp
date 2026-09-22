@@ -1,8 +1,16 @@
 use std::fmt;
+use std::str::FromStr;
 
 use serde::{Serialize, Serializer};
+use thiserror::Error;
 
 use crate::document::Origin;
+use crate::sentence::Sentence;
+
+mod context;
+mod s01;
+
+pub use context::{Context, WordList};
 
 /// 規則の層。指摘の重みと、どの条件で数えるかを決める。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -23,6 +31,15 @@ pub enum Layer {
 }
 
 impl Layer {
+    const ALL: [Self; 6] = [
+        Self::Structure,
+        Self::Lexical,
+        Self::Density,
+        Self::Register,
+        Self::Formulaic,
+        Self::Goshu,
+    ];
+
     /// 規則 ID の先頭に置く文字。
     pub fn letter(self) -> char {
         match self {
@@ -33,6 +50,11 @@ impl Layer {
             Self::Formulaic => 'F',
             Self::Goshu => 'G',
         }
+    }
+
+    /// その文字を `letter` が返す層。
+    pub fn from_letter(letter: char) -> Option<Self> {
+        Self::ALL.into_iter().find(|layer| layer.letter() == letter)
     }
 }
 
@@ -52,6 +74,32 @@ impl RuleId {
 
     pub fn layer(self) -> Layer {
         self.layer
+    }
+}
+
+/// 規則 ID として解釈できない文字列。
+#[derive(Debug, Error)]
+#[error("規則 ID の形ではない: {0}")]
+pub struct ParseRuleIdError(String);
+
+impl FromStr for RuleId {
+    type Err = ParseRuleIdError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let error = || ParseRuleIdError(text.to_string());
+        let mut chars = text.chars();
+        let layer = chars
+            .next()
+            .and_then(Layer::from_letter)
+            .ok_or_else(error)?;
+        let number = chars.as_str();
+        if number.len() != 2 {
+            return Err(error());
+        }
+        match number.parse() {
+            Ok(number @ 1..=99) => Ok(Self::new(layer, number)),
+            _ => Err(error()),
+        }
     }
 }
 
@@ -106,5 +154,91 @@ impl Finding {
 
     pub fn hint(&self) -> &'static str {
         self.hint
+    }
+}
+
+/// 1 文を対象とする規則。
+pub trait SentenceRule {
+    fn id(&self) -> RuleId;
+
+    /// 規則集の見出しを指す anchor。
+    fn doc_anchor(&self) -> &'static str;
+
+    fn check(&self, sentence: &Sentence, context: &Context) -> Vec<Finding>;
+}
+
+/// 文書の文の列を対象とする規則。
+pub trait DocumentRule {
+    fn id(&self) -> RuleId;
+
+    /// 規則集の見出しを指す anchor。
+    fn doc_anchor(&self) -> &'static str;
+
+    fn check(&self, sentences: &[Sentence], context: &Context) -> Vec<Finding>;
+}
+
+/// 文の規則の一覧。
+pub fn sentence_rules() -> Vec<Box<dyn SentenceRule>> {
+    vec![Box::new(s01::InanimateSpeaker)]
+}
+
+/// 文書の規則の一覧。
+pub fn document_rules() -> Vec<Box<dyn DocumentRule>> {
+    Vec::new()
+}
+
+/// 一覧にある規則の ID と anchor。
+pub fn registered() -> Vec<(RuleId, &'static str)> {
+    sentence_rules()
+        .iter()
+        .map(|rule| (rule.id(), rule.doc_anchor()))
+        .chain(
+            document_rules()
+                .iter()
+                .map(|rule| (rule.id(), rule.doc_anchor())),
+        )
+        .collect()
+}
+
+/// 一覧にある全ての規則を適用した指摘。文の順、規則の順に並ぶ。
+pub fn check(sentences: &[Sentence], context: &Context) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    let rules = sentence_rules();
+    for sentence in sentences {
+        for rule in &rules {
+            findings.extend(rule.check(sentence, context));
+        }
+    }
+    for rule in document_rules() {
+        findings.extend(rule.check(sentences, context));
+    }
+    findings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_rule_id_is_read_back_from_its_text() {
+        assert_eq!(
+            "S01".parse::<RuleId>().unwrap(),
+            RuleId::new(Layer::Structure, 1)
+        );
+        assert_eq!(
+            "G01".parse::<RuleId>().unwrap(),
+            RuleId::new(Layer::Goshu, 1)
+        );
+        for text in ["", "S", "S0", "S00", "S1", "S001", "X01", "s01", "SAB"] {
+            assert!(text.parse::<RuleId>().is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn every_layer_letter_maps_back_to_its_layer() {
+        for layer in Layer::ALL {
+            assert_eq!(Layer::from_letter(layer.letter()), Some(layer));
+        }
+        assert_eq!(Layer::from_letter('X'), None);
     }
 }
