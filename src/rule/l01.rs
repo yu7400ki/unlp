@@ -1,5 +1,9 @@
-use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, lemma, surface};
+use std::ops::Range;
+
+use crate::rule::predicate::is_verb;
+use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, WordList, surface};
 use crate::sentence::Sentence;
+use crate::token::Token;
 
 const ID: RuleId = RuleId::new(Layer::Lexical, 1);
 const HINT: &str = "その分野で通っている語を使う: メニュー、メッセージ、ウィンドウ、キー、フラグ、フォーカスリング、ビルドする、高速パス、雛形、コールドスタート";
@@ -22,9 +26,18 @@ impl SentenceRule for NativizedTerm {
     fn check(&self, sentence: &Sentence, context: &Context) -> Vec<Finding> {
         let list = context.list(ID);
         let mut ranges = surface::matches(sentence.text(), list.words(PHRASES));
-        ranges.extend(lemma::verbs(sentence.tokens(), list, VERBS));
+        ranges.extend(verbs(sentence.tokens(), list));
         surface::findings_at(ID, sentence, ranges, HINT)
     }
+}
+
+/// 原形が語リストにある動詞の範囲。活用形は原形で照合する。
+fn verbs(tokens: &[Token], list: &WordList) -> Vec<Range<usize>> {
+    tokens
+        .iter()
+        .filter(|token| list.words(VERBS).any(|lemma| is_verb(token, lemma)))
+        .map(|token| token.byte_range.clone())
+        .collect()
 }
 
 #[cfg(test)]

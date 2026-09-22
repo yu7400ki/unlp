@@ -21,7 +21,6 @@ pub(crate) mod harness;
 mod l01;
 mod l02;
 mod l03;
-mod lemma;
 mod predicate;
 mod r02;
 mod s01;
