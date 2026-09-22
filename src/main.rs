@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use unlp::extract::{self, STDIN_NAME};
 use unlp::input;
+use unlp::morph::Analyzer;
 use unlp::score::{DEFAULT_FLOOR, DocumentScore, Measures, Report, Score, ScoreMode, Total};
 use unlp::sentence::{self, is_japanese};
 use unlp::{Document, Finding};
@@ -69,9 +70,13 @@ fn run() -> Result<bool> {
         }
     };
 
+    let analyzer = Analyzer::new()?;
     let mut scores = Vec::new();
     for document in &documents {
-        let sentences = sentence::split_document(document);
+        let mut sentences = sentence::split_document(document);
+        for sentence in &mut sentences {
+            analyzer.analyze(sentence)?;
+        }
         scores.push(DocumentScore {
             name: document.name.clone(),
             score: Score::new(&sentences, Vec::new(), Measures::default(), DEFAULT_FLOOR),
