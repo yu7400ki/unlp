@@ -4,7 +4,7 @@ use crate::rule::{Layer, RuleId};
 
 const WEIGHTS: &str = include_str!("../../data/weights.toml");
 
-const LISTS: [(RuleId, &str); 4] = [
+const LISTS: [(RuleId, &str); 5] = [
     (
         RuleId::new(Layer::Structure, 1),
         include_str!("../../data/lists/S01.toml"),
@@ -12,6 +12,10 @@ const LISTS: [(RuleId, &str); 4] = [
     (
         RuleId::new(Layer::Structure, 3),
         include_str!("../../data/lists/S03.toml"),
+    ),
+    (
+        RuleId::new(Layer::Lexical, 1),
+        include_str!("../../data/lists/L01.toml"),
     ),
     (
         RuleId::new(Layer::Formulaic, 1),
