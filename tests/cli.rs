@@ -55,6 +55,17 @@ fn check_walks_directories_and_skips_excluded_ones() {
 }
 
 #[test]
+fn a_file_without_japanese_is_not_a_document() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.txt"), "no japanese here\n").unwrap();
+    fs::write(dir.path().join("b.txt"), "日本語だ。").unwrap();
+
+    let report = json(unlp().args(["check", "--json"]).arg(dir.path()));
+    assert_eq!(report["documents"].as_array().unwrap().len(), 1);
+    assert_eq!(report["documents"][0]["score"]["ja_chars"], 4);
+}
+
+#[test]
 fn the_floor_switches_the_total_to_a_normalized_point() {
     let text = "日本語の文だ。".repeat(50);
     let report = json(unlp().args(["stdin", "--json"]).write_stdin(text));

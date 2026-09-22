@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::document::Document;
 use crate::extract;
+use crate::sentence;
 
 /// 探索の対象から除くディレクトリの名前。
 const EXCLUDED_DIRS: [&str; 3] = ["target", "node_modules", ".git"];
@@ -25,8 +26,8 @@ pub enum Error {
 
 pub type Result<T> = result::Result<T, Error>;
 
-/// ファイル全体を 1 つの文書として読み込む。
-pub fn read_document(path: &Path) -> Result<Document> {
+/// ファイル全体を 1 つの文書として読み込む。日本語の文字を含まなければ `None`。
+pub fn read_document(path: &Path) -> Result<Option<Document>> {
     let bytes = fs::read(path).map_err(|source| Error::Read {
         path: path.to_path_buf(),
         source,
@@ -34,7 +35,9 @@ pub fn read_document(path: &Path) -> Result<Document> {
     let text = String::from_utf8(bytes).map_err(|_| Error::NotUtf8 {
         path: path.to_path_buf(),
     })?;
-    Ok(extract::text_document(path.display().to_string(), &text))
+    let document = extract::text_document(path.display().to_string(), &text);
+    let ja_chars = sentence::ja_chars(&sentence::split_document(&document));
+    Ok((ja_chars > 0).then_some(document))
 }
 
 /// パスがディレクトリならその下のファイルを再帰的に列挙し、ファイルならそれ自身を返す。
@@ -115,6 +118,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let error = collect_files(&dir.path().join("missing")).unwrap_err();
         assert!(matches!(error, Error::Read { .. }));
+    }
+
+    #[test]
+    fn only_files_with_japanese_become_documents() {
+        let dir = tempfile::tempdir().unwrap();
+        let japanese = dir.path().join("a.txt");
+        let latin = dir.path().join("b.txt");
+        fs::write(&japanese, "文だ。").unwrap();
+        fs::write(&latin, "no japanese here\n").unwrap();
+
+        assert!(read_document(&japanese).unwrap().is_some());
+        assert!(read_document(&latin).unwrap().is_none());
     }
 
     #[test]
