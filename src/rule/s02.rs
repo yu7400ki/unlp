@@ -80,6 +80,14 @@ mod tests {
     }
 
     #[test]
+    fn an_unclosed_bold_marker_keeps_the_head_of_the_next_sentence() {
+        assert_eq!(
+            excerpts("**太字が閉じません。これは意図的です。"),
+            ["これは"]
+        );
+    }
+
+    #[test]
     fn the_findings_are_one_per_sentence() {
         assert_eq!(
             excerpts("これは意図的です。それも同じだ。"),

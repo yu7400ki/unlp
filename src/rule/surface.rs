@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::rule::{Finding, RuleId};
-use crate::sentence::{BOLD, Sentence};
+use crate::sentence::Sentence;
 
 /// 抜粋に残す文字数。
 const LIMIT: usize = 40;
@@ -21,26 +21,6 @@ pub fn matches<'a>(text: &str, phrases: impl IntoIterator<Item = &'a str>) -> Ve
         }
     }
     sorted(ranges)
-}
-
-/// 太字で囲んだ範囲。記法の `**` を含み、始まりの順に並ぶ。
-pub fn bold(text: &str) -> Vec<Range<usize>> {
-    let mut ranges = Vec::new();
-    let mut from = 0;
-    while let Some(offset) = text[from..].find(BOLD) {
-        let open = from + offset;
-        let Some(offset) = text[open + BOLD.len()..].find(BOLD) else {
-            break;
-        };
-        from = open + BOLD.len() + offset + BOLD.len();
-        ranges.push(open..from);
-    }
-    ranges
-}
-
-/// 太字の内側。
-pub fn inside_bold<'a>(text: &'a str, bold: &Range<usize>) -> &'a str {
-    &text[bold.start + BOLD.len()..bold.end - BOLD.len()]
 }
 
 /// 文の中の範囲の抜粋。`LIMIT` 文字を超える分は落とす。
@@ -113,20 +93,5 @@ mod tests {
         let long = excerpt(&text, 0..text.len());
         assert_eq!(long.chars().count(), LIMIT);
         assert_eq!(long, "あ".repeat(LIMIT));
-    }
-
-    #[test]
-    fn a_bold_range_spans_its_markers() {
-        let text = "**一つ**と**二つ**。";
-        let ranges = bold(text);
-        assert_eq!(ranges.len(), 2);
-        assert_eq!(&text[ranges[0].clone()], "**一つ**");
-        assert_eq!(inside_bold(text, &ranges[1]), "二つ");
-    }
-
-    #[test]
-    fn a_marker_without_its_pair_is_not_a_bold_range() {
-        assert_eq!(bold("**閉じない。"), []);
-        assert_eq!(bold("太字は無い。"), []);
     }
 }

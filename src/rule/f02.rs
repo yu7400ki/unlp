@@ -1,7 +1,7 @@
 use std::ops::RangeInclusive;
 
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
-use crate::sentence::Sentence;
+use crate::sentence::{self, Sentence};
 
 const ID: RuleId = RuleId::new(Layer::Formulaic, 2);
 const HINT: &str = "太字で結論を先出ししない。文の順序で示す";
@@ -28,12 +28,12 @@ impl SentenceRule for BoldConclusion {
     fn check(&self, sentence: &Sentence, _context: &Context) -> Vec<Finding> {
         let text = sentence.text();
         let head = text.len() - without_ordinal(text).len();
-        let range = surface::bold(text)
+        let range = sentence::bold(text)
             .into_iter()
             .next()
             .filter(|range| range.start == head)
             .filter(|range| {
-                let inner = surface::inside_bold(text, range);
+                let inner = sentence::inside_bold(text, range);
                 INNER.contains(&inner.chars().count()) && concludes(inner)
             });
         surface::findings_at(ID, sentence, range.into_iter().collect(), HINT)

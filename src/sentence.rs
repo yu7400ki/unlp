@@ -47,6 +47,46 @@ pub fn is_japanese(c: char) -> bool {
     matches!(c, '\u{3005}' | '\u{3006}' | '\u{3041}'..='\u{309f}' | '\u{30a0}'..='\u{30ff}' | '\u{4e00}'..='\u{9fff}')
 }
 
+/// 太字で囲んだ範囲。記法の `**` を含み、始まりの順に並ぶ。コードスパンの中の記法と、
+/// 対になる記法が空行までに現れないものは太字にしない。
+pub(crate) fn bold(text: &str) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut open = None;
+    let mut in_code_span = false;
+    let mut line_start = 0;
+    let mut marker_end = 0;
+    for (index, c) in text.char_indices() {
+        if index < marker_end {
+            continue;
+        }
+        match c {
+            '\n' => {
+                if text[line_start..index].trim().is_empty() {
+                    in_code_span = false;
+                    open = None;
+                }
+                line_start = index + 1;
+            }
+            '`' => in_code_span = !in_code_span,
+            _ if in_code_span => {}
+            '*' if text[index..].starts_with(BOLD) => {
+                marker_end = index + BOLD.len();
+                match open.take() {
+                    Some(start) => ranges.push(start..marker_end),
+                    None => open = Some(index),
+                }
+            }
+            _ => {}
+        }
+    }
+    ranges
+}
+
+/// 太字の内側。
+pub(crate) fn inside_bold<'a>(text: &'a str, bold: &Range<usize>) -> &'a str {
+    &text[bold.start + BOLD.len()..bold.end - BOLD.len()]
+}
+
 /// 文書のすべての Segment を文に分割する。
 pub(crate) fn split_document(document: &Document) -> Vec<Sentence<'_>> {
     document.segments.iter().flat_map(split_sentences).collect()
@@ -62,25 +102,20 @@ pub fn ja_chars(sentences: &[Sentence]) -> usize {
 /// 返さない。
 pub(crate) fn split_sentences(segment: &Segment) -> Vec<Sentence<'_>> {
     let text = &segment.text;
+    let bold = bold(text);
     let mut sentences = Vec::new();
     let mut closers: Vec<char> = Vec::new();
     let mut in_code_span = false;
-    let mut in_bold = false;
-    let mut after_marker = false;
     let mut start = 0;
     let mut line_start = 0;
     for (index, c) in text.char_indices() {
-        if after_marker {
-            after_marker = false;
-            continue;
-        }
+        let in_bold = bold.iter().any(|range| range.contains(&index));
         if c == '\n' {
             let blank_line = text[line_start..index].trim().is_empty();
             line_start = index + 1;
             if blank_line {
                 closers.clear();
                 in_code_span = false;
-                in_bold = false;
             } else if !closers.is_empty() || in_code_span || in_bold {
                 continue;
             }
@@ -88,14 +123,12 @@ pub(crate) fn split_sentences(segment: &Segment) -> Vec<Sentence<'_>> {
             start = index + 1;
             continue;
         }
+        if in_bold {
+            continue;
+        }
         match c {
             '`' => in_code_span = !in_code_span,
             _ if in_code_span => {}
-            '*' if text[index..].starts_with(BOLD) => {
-                in_bold = !in_bold;
-                after_marker = true;
-            }
-            _ if in_bold => {}
             '「' => closers.push('」'),
             '『' => closers.push('』'),
             '（' => closers.push('）'),
@@ -190,6 +223,40 @@ mod tests {
     #[test]
     fn keeps_code_spans_whole() {
         assert_eq!(texts("`a。b` は識別子だ。"), ["`a。b` は識別子だ。"]);
+    }
+
+    #[test]
+    fn a_marker_without_its_pair_does_not_hold_the_sentences() {
+        assert_eq!(
+            texts("べき乗は 2**8 で表す。次の文だ。三つ目だ。"),
+            ["べき乗は 2**8 で表す。", "次の文だ。", "三つ目だ。"]
+        );
+        assert_eq!(
+            texts("**太字が閉じません。これは意図的です。"),
+            ["**太字が閉じません。", "これは意図的です。"]
+        );
+    }
+
+    #[test]
+    fn a_bold_range_spans_its_markers() {
+        let text = "**一つ**と**二つ**。";
+        let ranges = bold(text);
+        assert_eq!(ranges.len(), 2);
+        assert_eq!(&text[ranges[0].clone()], "**一つ**");
+        assert_eq!(inside_bold(text, &ranges[1]), "二つ");
+    }
+
+    #[test]
+    fn a_marker_without_its_pair_is_not_a_bold_range() {
+        assert!(bold("**閉じない。").is_empty());
+        assert!(bold("太字は無い。").is_empty());
+        assert!(bold("**空行をまたぐ。\n\n閉じる。**").is_empty());
+    }
+
+    #[test]
+    fn a_marker_in_a_code_span_is_not_a_bold_range() {
+        assert!(bold("`/**` と `/**` の扱いを決める。").is_empty());
+        assert!(bold("計算は `2**8` と `2**16` で行う。").is_empty());
     }
 
     #[test]

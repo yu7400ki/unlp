@@ -1,5 +1,5 @@
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
-use crate::sentence::Sentence;
+use crate::sentence::{self, Sentence};
 
 const ID: RuleId = RuleId::new(Layer::Formulaic, 3);
 const HINT: &str = "本文の太字は外す。強調は語の選択と文の位置で行う";
@@ -18,7 +18,7 @@ impl SentenceRule for BoldInProse {
 
     /// 太字で囲んだ箇所。
     fn check(&self, sentence: &Sentence, _context: &Context) -> Vec<Finding> {
-        let ranges = surface::bold(sentence.text());
+        let ranges = sentence::bold(sentence.text());
         surface::findings_at(ID, sentence, ranges, HINT)
     }
 }
@@ -53,5 +53,11 @@ mod tests {
     fn a_sentence_without_bold_is_not_a_finding() {
         assert!(excerpts("強調を外した文だ。").is_empty());
         assert!(excerpts("**閉じない文だ。").is_empty());
+    }
+
+    #[test]
+    fn a_marker_in_a_code_span_is_not_a_finding() {
+        assert!(excerpts("`/**` と `/**` の扱いを決める。").is_empty());
+        assert!(excerpts("計算は `2**8` と `2**16` で行う。").is_empty());
     }
 }
