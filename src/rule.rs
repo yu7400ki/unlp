@@ -8,12 +8,14 @@ use crate::document::Origin;
 use crate::sentence::{self, Sentence};
 
 mod context;
+mod d02;
 #[cfg(test)]
 pub(crate) mod harness;
 mod s01;
 mod s02;
 mod s03;
 mod s04;
+mod s05;
 mod surface;
 
 pub use context::{Context, WordList};
@@ -205,6 +207,8 @@ pub fn sentence_rules() -> Vec<Box<dyn SentenceRule>> {
         Box::new(s02::LeadingDemonstrative),
         Box::new(s03::Scaffolding),
         Box::new(s04::FirstPerson),
+        Box::new(s05::NegativeContrast),
+        Box::new(d02::PredicatelessFragment),
     ]
 }
 
