@@ -59,6 +59,18 @@ impl Layer {
     pub fn from_letter(letter: char) -> Option<Self> {
         Self::ALL.into_iter().find(|layer| layer.letter() == letter)
     }
+
+    /// 層の名前。
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Structure => "構造",
+            Self::Lexical => "語彙",
+            Self::Density => "密度",
+            Self::Register => "レジスター",
+            Self::Formulaic => "定型句",
+            Self::Goshu => "語種",
+        }
+    }
 }
 
 /// 規則の識別子。層の文字と 2 桁の番号で表す。

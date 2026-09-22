@@ -76,10 +76,26 @@ fn the_text_output_lists_the_findings() {
 #[test]
 fn the_normalized_point_weighs_the_findings() {
     let text = format!("{}型の doc が名乗る。", "日本語の文だ。".repeat(49));
-    let report = json(unlp().args(["stdin", "--json"]).write_stdin(text));
+    let report = json(unlp().args(["stdin", "--json"]).write_stdin(text.as_str()));
     assert_eq!(report["total"]["ja_chars"], 300);
     assert_eq!(report["total"]["mode"]["per_1000"], 10.0);
     assert_eq!(report["total"]["mode"]["by_layer"]["structure"], 10.0);
+
+    unlp()
+        .args(["stdin", "--summary"])
+        .write_stdin(text)
+        .assert()
+        .success()
+        .stdout(contains("全体  300 字  50 文  正規化 10.0 点（構造 10.0）"));
+}
+
+#[test]
+fn rules_lists_the_rule_with_its_layer_weight_and_heading() {
+    unlp()
+        .arg("rules")
+        .assert()
+        .success()
+        .stdout(contains("S01  構造  3.00  文書・型・検査を語り手にしない"));
 }
 
 #[test]

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::{Read, stdin};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -9,7 +10,7 @@ use unlp::input;
 use unlp::morph::Analyzer;
 use unlp::score::{DEFAULT_FLOOR, DocumentScore, Measures, Report, Score, ScoreMode, Total};
 use unlp::sentence::is_japanese;
-use unlp::{Document, Finding, rule};
+use unlp::{Document, Finding, Layer, rule};
 
 /// 日本語の文章に残る AI の癖を検出して採点する。
 #[derive(Parser)]
@@ -30,6 +31,8 @@ enum Command {
     },
     /// 標準入力を 1 つの文書として検査する
     Stdin,
+    /// 規則の一覧と規則集の見出しを出力する
+    Rules,
 }
 
 #[derive(Args)]
@@ -58,7 +61,12 @@ fn main() -> ExitCode {
 
 fn run() -> Result<bool> {
     let cli = Cli::parse();
+    let context = rule::Context::defaults();
     let documents = match &cli.command {
+        Command::Rules => {
+            print_rules(&context);
+            return Ok(false);
+        }
         Command::Check { paths } => check(paths)?,
         Command::Stdin => {
             let text = read_stdin()?;
@@ -70,7 +78,6 @@ fn run() -> Result<bool> {
         }
     };
 
-    let context = rule::Context::defaults();
     let analyzer = Analyzer::new()?;
     let mut scores = Vec::new();
     for document in &documents {
@@ -154,10 +161,36 @@ fn print_findings(findings: &[Finding]) {
     }
 }
 
+/// 規則の ID、層、重み、規則集の見出しを 1 行ずつ出力する。
+fn print_rules(context: &rule::Context) {
+    for (rule, anchor) in rule::registered() {
+        let weight = context.weights().get(&rule).copied().unwrap_or_default();
+        println!(
+            "{rule}  {}  {weight:.2}  {}",
+            rule.layer().name(),
+            rule::doc_heading(anchor).unwrap_or_default()
+        );
+    }
+}
+
 fn format_point(total: &Total) -> String {
     let point = match total.mode() {
-        ScoreMode::Normalized { per_1000, .. } => format!("正規化 {per_1000:.1} 点"),
+        ScoreMode::Normalized { per_1000, by_layer } => {
+            format!("正規化 {per_1000:.1} 点{}", format_layers(by_layer))
+        }
         ScoreMode::CountOnly => format!("指摘 {} 件", total.finding_count()),
     };
     format!("{} 字  {} 文  {point}", total.ja_chars(), total.sentences())
+}
+
+/// 点を持つ層の小計。
+fn format_layers(by_layer: &BTreeMap<Layer, f64>) -> String {
+    if by_layer.is_empty() {
+        return String::new();
+    }
+    let layers: Vec<String> = by_layer
+        .iter()
+        .map(|(layer, point)| format!("{} {point:.1}", layer.name()))
+        .collect();
+    format!("（{}）", layers.join("、"))
 }
