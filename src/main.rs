@@ -82,7 +82,7 @@ fn run() -> Result<bool> {
     let mut scores = Vec::new();
     for document in &documents {
         let sentences = analyzer.analyze_document(document);
-        let findings = rule::check(&sentences, &context);
+        let findings = rule::check(&sentences, &context, DEFAULT_FLOOR);
         scores.push(DocumentScore {
             name: document.name.clone(),
             score: Score::new(

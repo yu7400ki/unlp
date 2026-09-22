@@ -5,7 +5,7 @@ use serde::{Serialize, Serializer};
 use thiserror::Error;
 
 use crate::document::Origin;
-use crate::sentence::Sentence;
+use crate::sentence::{self, Sentence};
 
 mod context;
 mod s01;
@@ -224,8 +224,9 @@ pub fn doc_heading(anchor: &str) -> Option<&'static str> {
         .map(str::trim)
 }
 
-/// 一覧にある全ての規則を適用した指摘。文の順、規則の順に並ぶ。
-pub fn check(sentences: &[Sentence], context: &Context) -> Vec<Finding> {
+/// 一覧にある規則を適用した指摘。文の順、規則の順に並ぶ。日本語文字数が `floor` 未満の
+/// ときは、割合で評価する層の `DocumentRule` を適用しない。
+pub fn check(sentences: &[Sentence], context: &Context, floor: usize) -> Vec<Finding> {
     let mut findings = Vec::new();
     let rules = sentence_rules();
     for sentence in sentences {
@@ -233,10 +234,20 @@ pub fn check(sentences: &[Sentence], context: &Context) -> Vec<Finding> {
             findings.extend(rule.check(sentence, context));
         }
     }
+    let below_floor = sentence::ja_chars(sentences) < floor;
     for rule in document_rules() {
+        if below_floor && !applies_below_floor(rule.id().layer()) {
+            continue;
+        }
         findings.extend(rule.check(sentences, context));
     }
     findings
+}
+
+/// 下限未満の入力にも `DocumentRule` を適用する層か。密度、レジスター、語種は文書全体の
+/// 割合で評価するため、下限以上の入力でだけ適用する。
+fn applies_below_floor(layer: Layer) -> bool {
+    !matches!(layer, Layer::Density | Layer::Register | Layer::Goshu)
 }
 
 #[cfg(test)]
@@ -280,6 +291,16 @@ mod tests {
         assert_eq!(doc_heading("S01"), Some("文書・型・検査を語り手にしない"));
         assert_eq!(doc_heading("S0"), None);
         assert_eq!(doc_heading("Z99"), None);
+    }
+
+    #[test]
+    fn the_layers_of_a_ratio_wait_for_the_floor() {
+        for layer in [Layer::Structure, Layer::Lexical, Layer::Formulaic] {
+            assert!(applies_below_floor(layer), "{}", layer.name());
+        }
+        for layer in [Layer::Density, Layer::Register, Layer::Goshu] {
+            assert!(!applies_below_floor(layer), "{}", layer.name());
+        }
     }
 
     #[test]
