@@ -29,6 +29,10 @@ impl<'a> Sentence<'a> {
         &self.tokens
     }
 
+    pub(crate) fn set_tokens(&mut self, tokens: Vec<Token>) {
+        self.tokens = tokens;
+    }
+
     /// 文に含まれる日本語の文字数。
     pub fn ja_chars(&self) -> usize {
         self.text().chars().filter(|c| is_japanese(*c)).count()

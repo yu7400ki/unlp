@@ -1,6 +1,7 @@
 pub mod document;
 pub mod extract;
 pub mod input;
+pub mod morph;
 pub mod rule;
 pub mod score;
 pub mod sentence;
