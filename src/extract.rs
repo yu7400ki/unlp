@@ -143,7 +143,7 @@ impl<'a> Blocks<'a> {
         });
     }
 
-    /// 開いているブロックを閉じ、本文があれば Segment にする。
+    /// 開いているブロックを閉じ、空白でない本文があれば Segment にする。
     fn close(&mut self) {
         let Some(block) = self.open.pop() else {
             return;
@@ -151,8 +151,12 @@ impl<'a> Blocks<'a> {
         let Some(body) = block.body else {
             return;
         };
+        let text = blanked(self.text, &body, block.blanks);
+        if text.trim().is_empty() {
+            return;
+        }
         let segment = Segment {
-            text: blanked(self.text, &body, block.blanks),
+            text,
             origin: Origin {
                 path: self.name.clone(),
                 lines: self.lines.of(&body),
@@ -435,6 +439,7 @@ mod tests {
                 blanks("![画像の説明](img.png)")
             )]
         );
+        assert!(texts("![画像の説明](img.png)\n").is_empty());
     }
 
     #[test]
