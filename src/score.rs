@@ -65,13 +65,14 @@ pub struct Measures {
 }
 
 impl Score {
-    /// 文と指摘から採点する。日本語文字数が `floor` 以上なら正規化した点、未満なら件数で
-    /// 判断する。
+    /// 文と指摘から採点する。日本語文字数が `floor` 以上なら重みで正規化した点、未満なら
+    /// 件数で判断する。
     pub fn new(
         sentences: &[Sentence],
         findings: Vec<Finding>,
         measures: Measures,
         floor: usize,
+        weights: &BTreeMap<RuleId, f64>,
     ) -> Self {
         let ja_chars = sentence::ja_chars(sentences);
         let mut by_rule = BTreeMap::new();
@@ -81,7 +82,7 @@ impl Score {
         Self {
             ja_chars,
             sentences: sentences.len(),
-            mode: mode_for(ja_chars, floor),
+            mode: mode_for(ja_chars, floor, &by_rule, weights),
             by_rule,
             measures,
             findings: Some(findings),
@@ -169,7 +170,11 @@ impl Total {
 
 impl Report {
     /// 文書ごとの結果と、それを合算した集計をまとめる。
-    pub fn new(documents: Vec<DocumentScore>, floor: usize) -> Self {
+    pub fn new(
+        documents: Vec<DocumentScore>,
+        floor: usize,
+        weights: &BTreeMap<RuleId, f64>,
+    ) -> Self {
         let ja_chars = documents
             .iter()
             .map(|document| document.score.ja_chars)
@@ -187,7 +192,7 @@ impl Report {
         let total = Total {
             ja_chars,
             sentences,
-            mode: mode_for(ja_chars, floor),
+            mode: mode_for(ja_chars, floor, &by_rule, weights),
             by_rule,
         };
         Self { documents, total }
@@ -214,14 +219,25 @@ impl Report {
     }
 }
 
-fn mode_for(ja_chars: usize, floor: usize) -> ScoreMode {
-    if ja_chars >= floor {
-        ScoreMode::Normalized {
-            per_1000: 0.0,
-            by_layer: BTreeMap::new(),
-        }
-    } else {
-        ScoreMode::CountOnly
+/// 日本語文字数が下限以上なら、指摘の件数と重みから 1000 字あたりの点を層ごとに求める。
+fn mode_for(
+    ja_chars: usize,
+    floor: usize,
+    by_rule: &BTreeMap<RuleId, usize>,
+    weights: &BTreeMap<RuleId, f64>,
+) -> ScoreMode {
+    if ja_chars == 0 || ja_chars < floor {
+        return ScoreMode::CountOnly;
+    }
+    let mut by_layer: BTreeMap<Layer, f64> = BTreeMap::new();
+    for (rule, count) in by_rule {
+        let weight = weights.get(rule).copied().unwrap_or_default();
+        *by_layer.entry(rule.layer()).or_default() +=
+            *count as f64 * weight * 1000.0 / ja_chars as f64;
+    }
+    ScoreMode::Normalized {
+        per_1000: by_layer.values().sum(),
+        by_layer,
     }
 }
 
@@ -263,6 +279,14 @@ mod tests {
         Finding::new(RuleId::new(layer, number), origin(), "x".to_string(), "h")
     }
 
+    /// 構造の 1 番を 3.0、密度の 2 番を 0.5 とする重み。
+    fn weights() -> BTreeMap<RuleId, f64> {
+        BTreeMap::from([
+            (RuleId::new(Layer::Structure, 1), 3.0),
+            (RuleId::new(Layer::Density, 2), 0.5),
+        ])
+    }
+
     fn score(text: &str, findings: Vec<Finding>) -> Score {
         let segment = segment(text);
         Score::new(
@@ -270,6 +294,7 @@ mod tests {
             findings,
             Measures::default(),
             DEFAULT_FLOOR,
+            &weights(),
         )
     }
 
@@ -322,9 +347,29 @@ mod tests {
     }
 
     #[test]
+    fn normalized_weighs_the_findings_per_1000_ja_chars() {
+        let text = "あ".repeat(500);
+        let score = score(
+            &text,
+            vec![finding(Layer::Structure, 1), finding(Layer::Density, 2)],
+        );
+        let ScoreMode::Normalized { per_1000, by_layer } = score.mode() else {
+            panic!("{:?}", score.mode());
+        };
+        assert_eq!(*per_1000, 7.0);
+        assert_eq!(by_layer[&Layer::Structure], 6.0);
+        assert_eq!(by_layer[&Layer::Density], 1.0);
+        assert_eq!(by_layer.len(), 2);
+    }
+
+    #[test]
     fn normalized_compares_the_point_with_the_threshold() {
         let text = "あ".repeat(DEFAULT_FLOOR);
-        assert!(!score(&text, vec![finding(Layer::Structure, 1)]).exceeds(0.0));
+        assert!(!score(&text, Vec::new()).exceeds(0.0));
+
+        let score = score(&text, vec![finding(Layer::Structure, 1)]);
+        assert!(score.exceeds(9.9));
+        assert!(!score.exceeds(10.0));
     }
 
     #[test]
@@ -354,7 +399,7 @@ mod tests {
             vec![
                 DocumentScore {
                     name: "a".to_string(),
-                    score: score(&"あ".repeat(150), vec![finding(Layer::Structure, 1)]),
+                    score: score(&"あ".repeat(100), vec![finding(Layer::Structure, 1)]),
                 },
                 DocumentScore {
                     name: "b".to_string(),
@@ -362,16 +407,20 @@ mod tests {
                 },
             ],
             DEFAULT_FLOOR,
+            &weights(),
         );
         assert!(matches!(
             report.documents[0].score.mode(),
             ScoreMode::CountOnly
         ));
-        assert_eq!(report.total.ja_chars(), 350);
+        assert_eq!(report.total.ja_chars(), 300);
         assert_eq!(report.total.sentences(), 2);
         assert_eq!(report.total.by_rule()[&RuleId::new(Layer::Structure, 1)], 2);
         assert_eq!(report.total.finding_count(), 2);
-        assert!(matches!(report.total.mode(), ScoreMode::Normalized { .. }));
+        let ScoreMode::Normalized { per_1000, .. } = report.total.mode() else {
+            panic!("{:?}", report.total.mode());
+        };
+        assert_eq!(*per_1000, 20.0);
     }
 
     #[test]

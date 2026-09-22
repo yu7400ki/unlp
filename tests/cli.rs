@@ -43,6 +43,46 @@ fn text_output_lists_each_document_and_the_total() {
 }
 
 #[test]
+fn a_finding_carries_its_rule_origin_excerpt_and_hint() {
+    let report = json(
+        unlp()
+            .args(["stdin", "--json"])
+            .write_stdin("型の doc が名乗る。利用者が述べる。"),
+    );
+    let findings = report["documents"][0]["score"]["findings"]
+        .as_array()
+        .unwrap();
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(findings[0]["rule"], "S01");
+    assert_eq!(findings[0]["layer"], "structure");
+    assert_eq!(findings[0]["excerpt"], "doc が名乗る");
+    assert_eq!(findings[0]["origin"]["path"], "<stdin>");
+    assert!(findings[0]["hint"].is_string(), "{findings:?}");
+    assert_eq!(report["documents"][0]["score"]["by_rule"]["S01"], 1);
+}
+
+#[test]
+fn the_text_output_lists_the_findings() {
+    unlp()
+        .arg("stdin")
+        .write_stdin("型の doc が名乗る。")
+        .assert()
+        .success()
+        .stdout(contains(
+            "<stdin>:1  S01  doc が名乗る  文書や型を語り手にしない",
+        ));
+}
+
+#[test]
+fn the_normalized_point_weighs_the_findings() {
+    let text = format!("{}型の doc が名乗る。", "日本語の文だ。".repeat(49));
+    let report = json(unlp().args(["stdin", "--json"]).write_stdin(text));
+    assert_eq!(report["total"]["ja_chars"], 300);
+    assert_eq!(report["total"]["mode"]["per_1000"], 10.0);
+    assert_eq!(report["total"]["mode"]["by_layer"]["structure"], 10.0);
+}
+
+#[test]
 fn check_walks_directories_and_skips_excluded_ones() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "含まれる文だ。").unwrap();

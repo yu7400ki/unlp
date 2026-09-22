@@ -9,7 +9,7 @@ use unlp::input;
 use unlp::morph::Analyzer;
 use unlp::score::{DEFAULT_FLOOR, DocumentScore, Measures, Report, Score, ScoreMode, Total};
 use unlp::sentence::is_japanese;
-use unlp::{Document, Finding};
+use unlp::{Document, Finding, rule};
 
 /// 日本語の文章に残る AI の癖を検出して採点する。
 #[derive(Parser)]
@@ -70,16 +70,24 @@ fn run() -> Result<bool> {
         }
     };
 
+    let context = rule::Context::defaults();
     let analyzer = Analyzer::new()?;
     let mut scores = Vec::new();
     for document in &documents {
         let sentences = analyzer.analyze_document(document);
+        let findings = rule::check(&sentences, &context);
         scores.push(DocumentScore {
             name: document.name.clone(),
-            score: Score::new(&sentences, Vec::new(), Measures::default(), DEFAULT_FLOOR),
+            score: Score::new(
+                &sentences,
+                findings,
+                Measures::default(),
+                DEFAULT_FLOOR,
+                context.weights(),
+            ),
         });
     }
-    let mut report = Report::new(scores, DEFAULT_FLOOR);
+    let mut report = Report::new(scores, DEFAULT_FLOOR, context.weights());
     if cli.options.summary {
         report.forget_findings();
     }
