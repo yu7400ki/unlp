@@ -32,7 +32,7 @@ impl DocumentRule for ShortSentenceRun {
     }
 }
 
-/// 句点で終わり、`JA_CHARS` 字までの日本語で書かれた文。
+/// 句点で終わり、日本語の文字数が `JA_CHARS` 以下の文。
 fn is_short(sentence: &Sentence) -> bool {
     sentence.is_terminated() && sentence.ja_chars() <= JA_CHARS
 }
