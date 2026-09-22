@@ -66,8 +66,9 @@ mod tests {
     }
 
     #[test]
-    fn overlapping_phrases_are_one_finding() {
+    fn a_metaphor_of_the_register_layer_is_not_a_finding() {
         assert_eq!(excerpts("地とホバーの手応えを分ける。"), ["地とホバー"]);
+        assert!(excerpts("初回だけ代を払う。").is_empty());
     }
 
     #[test]
