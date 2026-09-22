@@ -5,7 +5,7 @@ use std::ops::Range;
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 
 use crate::document::{Document, LineRange, Origin, Segment, SegmentKind};
-use crate::sentence::BOLD;
+use crate::sentence::{BOLD, is_japanese};
 
 /// 標準入力から読んだ文書の名前。
 pub const STDIN_NAME: &str = "<stdin>";
@@ -42,6 +42,15 @@ pub fn markdown_document(name: String, text: &str) -> Document {
         blocks.step(event, range);
     }
     blocks.finish()
+}
+
+/// 日本語の文字を含む Segment を持つ文書だけを残す。
+pub fn with_japanese(document: Document) -> Option<Document> {
+    document
+        .segments
+        .iter()
+        .any(|segment| segment.text.chars().any(is_japanese))
+        .then_some(document)
 }
 
 /// 1 行目から最終行までの範囲。

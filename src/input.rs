@@ -6,7 +6,6 @@ use thiserror::Error;
 
 use crate::document::Document;
 use crate::extract;
-use crate::sentence::is_japanese;
 
 /// 探索の対象から除くディレクトリの名前。
 const EXCLUDED_DIRS: [&str; 3] = ["target", "node_modules", ".git"];
@@ -30,7 +29,7 @@ pub enum Error {
 pub type Result<T> = result::Result<T, Error>;
 
 /// ファイルを 1 つの文書として読み込む。`.md` と `.markdown` は Markdown の本文を、
-/// 他の拡張子は全体を抽出する。日本語の文字を含まなければ `None`。
+/// 他の拡張子は全体を抽出する。日本語の文字を含む Segment が無ければ `None`。
 pub fn read_document(path: &Path) -> Result<Option<Document>> {
     let bytes = fs::read(path).map_err(|source| Error::Read {
         path: path.to_path_buf(),
@@ -39,15 +38,13 @@ pub fn read_document(path: &Path) -> Result<Option<Document>> {
     let text = String::from_utf8(bytes).map_err(|_| Error::NotUtf8 {
         path: path.to_path_buf(),
     })?;
-    if !text.chars().any(is_japanese) {
-        return Ok(None);
-    }
     let name = document_name(path);
-    Ok(Some(if is_markdown(path) {
+    let document = if is_markdown(path) {
         extract::markdown_document(name, &text)
     } else {
         extract::text_document(name, &text)
-    }))
+    };
+    Ok(extract::with_japanese(document))
 }
 
 fn is_markdown(path: &Path) -> bool {

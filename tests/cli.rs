@@ -286,3 +286,10 @@ fn stdin_reads_markdown_with_the_format_flag() {
     let report = json(unlp().args(["stdin", "--json"]).write_stdin(markdown));
     assert_eq!(report["total"]["ja_chars"], 15);
 }
+
+#[test]
+fn a_file_with_japanese_only_in_code_is_not_a_document() {
+    let report = check_markdown("# Title\n\n```\nコードの文だ。\n```\n");
+    assert_eq!(report["documents"].as_array().unwrap().len(), 0);
+    assert_eq!(report["total"]["ja_chars"], 0);
+}

@@ -9,7 +9,6 @@ use unlp::extract::{self, STDIN_NAME};
 use unlp::input;
 use unlp::morph::Analyzer;
 use unlp::score::{DEFAULT_FLOOR, DocumentScore, Measures, Report, Score, ScoreMode, Total};
-use unlp::sentence::is_japanese;
 use unlp::{Document, Finding, Layer, rule};
 
 /// 日本語の文章に残る AI の癖を検出して採点する。
@@ -90,11 +89,8 @@ fn run() -> Result<bool> {
         Command::Check { paths } => check(paths)?,
         Command::Stdin { format } => {
             let text = read_stdin()?;
-            text.chars()
-                .any(is_japanese)
-                .then(|| format.document(STDIN_NAME.to_string(), &text))
-                .into_iter()
-                .collect()
+            let document = format.document(STDIN_NAME.to_string(), &text);
+            extract::with_japanese(document).into_iter().collect()
         }
     };
 
