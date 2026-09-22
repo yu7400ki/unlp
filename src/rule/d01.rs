@@ -89,4 +89,24 @@ mod tests {
     fn a_sentence_without_a_full_stop_ends_the_run() {
         assert!(excerpts("窓が開く。鍵が回る\n値が減る。").is_empty());
     }
+
+    #[test]
+    fn short_items_of_a_list_are_not_a_run() {
+        let items = ["窓が開く。", "鍵が回る。", "値が減る。"];
+        assert!(
+            harness::document_excerpts_of(&ShortSentenceRun, &items).is_empty(),
+            "{items:?}"
+        );
+    }
+
+    #[test]
+    fn short_sentences_of_one_paragraph_are_a_run() {
+        assert_eq!(
+            harness::document_excerpts_of(
+                &ShortSentenceRun,
+                &["窓が開く。鍵が回る。値が減る。", "日が沈む。"]
+            ),
+            ["窓が開く。"]
+        );
+    }
 }

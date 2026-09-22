@@ -1,15 +1,20 @@
+use std::ptr;
+
 use crate::sentence::Sentence;
 
 /// 連打として数える文の数の下限。
 const MINIMUM: usize = 3;
 
-/// 条件を満たす文が続く範囲。`MINIMUM` 文以上続くものだけを、始まりの順に返す。
+/// 1 つの Segment の中で条件を満たす文が続く範囲。`MINIMUM` 文以上続くものだけを、
+/// 始まりの順に返す。
 pub fn runs<'a, 's>(
     sentences: &'a [Sentence<'s>],
     matches: impl Fn(&Sentence) -> bool,
 ) -> Vec<&'a [Sentence<'s>]> {
     sentences
-        .chunk_by(|left, right| matches(left) == matches(right))
+        .chunk_by(|left, right| {
+            ptr::eq(left.segment(), right.segment()) && matches(left) == matches(right)
+        })
         .filter(|run| run.len() >= MINIMUM && matches(&run[0]))
         .collect()
 }
@@ -39,6 +44,25 @@ mod tests {
     fn a_run_spans_the_sentences_that_match() {
         assert_eq!(
             short_runs("短い。短い。短い。十分に長い文である。"),
+            [["短い。", "短い。", "短い。"]]
+        );
+    }
+
+    /// Segment ごとに分けた文書での、3 字までの文が続く範囲の文。
+    fn short_runs_of(texts: &[&str]) -> Vec<Vec<String>> {
+        harness::with_segments(texts, |sentences| {
+            runs(sentences, |sentence| sentence.ja_chars() <= 3)
+                .iter()
+                .map(|run| run.iter().map(|s| s.text().to_string()).collect())
+                .collect()
+        })
+    }
+
+    #[test]
+    fn a_run_does_not_cross_the_segments() {
+        assert!(short_runs_of(&["短い。", "短い。", "短い。"]).is_empty());
+        assert_eq!(
+            short_runs_of(&["短い。短い。短い。", "短い。"]),
             [["短い。", "短い。", "短い。"]]
         );
     }
