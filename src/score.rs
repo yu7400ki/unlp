@@ -236,7 +236,7 @@ fn mode_for(
             *count as f64 * weight * 1000.0 / ja_chars as f64;
     }
     ScoreMode::Normalized {
-        per_1000: by_layer.values().sum(),
+        per_1000: by_layer.values().fold(0.0, |total, point| total + point),
         by_layer,
     }
 }
@@ -360,6 +360,16 @@ mod tests {
         assert_eq!(by_layer[&Layer::Structure], 6.0);
         assert_eq!(by_layer[&Layer::Density], 1.0);
         assert_eq!(by_layer.len(), 2);
+    }
+
+    #[test]
+    fn a_document_without_findings_holds_a_positive_zero() {
+        let score = score(&"あ".repeat(DEFAULT_FLOOR), Vec::new());
+        let ScoreMode::Normalized { per_1000, by_layer } = score.mode() else {
+            panic!("{:?}", score.mode());
+        };
+        assert_eq!(format!("{per_1000:.1}"), "0.0");
+        assert!(by_layer.is_empty());
     }
 
     #[test]
