@@ -81,7 +81,10 @@ fn the_text_output_lists_the_findings() {
 
 #[test]
 fn the_normalized_point_weighs_the_findings() {
-    let text = format!("{}型の doc が名乗る。", "日本語の文だ。".repeat(49));
+    let text = format!(
+        "{}型の doc が名乗る。",
+        "日本語の文をここでは十分長く書いてあるのだ。".repeat(14)
+    );
     let report = json(unlp().args(["stdin", "--json"]).write_stdin(text.as_str()));
     assert_eq!(report["total"]["ja_chars"], 300);
     assert_eq!(report["total"]["mode"]["per_1000"], 10.0);
@@ -92,7 +95,7 @@ fn the_normalized_point_weighs_the_findings() {
         .write_stdin(text)
         .assert()
         .success()
-        .stdout(contains("全体  300 字  50 文  正規化 10.0 点（構造 10.0）"));
+        .stdout(contains("全体  300 字  15 文  正規化 10.0 点（構造 10.0）"));
 }
 
 #[test]
@@ -149,10 +152,10 @@ fn a_file_without_japanese_is_not_a_document() {
 
 #[test]
 fn the_floor_switches_the_total_to_a_normalized_point() {
-    let text = "日本語の文だ。".repeat(50);
+    let text = "日本語の文をここでは十分に長く書いてある。".repeat(15);
     let report = json(unlp().args(["stdin", "--json"]).write_stdin(text));
     assert_eq!(report["total"]["ja_chars"], 300);
-    assert_eq!(report["total"]["sentences"], 50);
+    assert_eq!(report["total"]["sentences"], 15);
     assert_eq!(report["total"]["mode"]["kind"], "normalized");
     assert_eq!(report["total"]["mode"]["per_1000"], 0.0);
 }
@@ -162,7 +165,7 @@ fn fail_over_passes_when_the_point_is_within_the_threshold() {
     let report = json(
         unlp()
             .args(["stdin", "--json", "--fail-over=0"])
-            .write_stdin("日本語の文だ。".repeat(50)),
+            .write_stdin("日本語の文をここでは十分に長く書いてある。".repeat(15)),
     );
     assert_eq!(report["total"]["mode"]["kind"], "normalized");
     assert_eq!(report["total"]["mode"]["per_1000"], 0.0);
@@ -172,7 +175,7 @@ fn fail_over_passes_when_the_point_is_within_the_threshold() {
 fn fail_over_stops_when_the_point_is_over_the_threshold() {
     unlp()
         .args(["stdin", "--fail-over=-1"])
-        .write_stdin("日本語の文だ。".repeat(50))
+        .write_stdin("日本語の文をここでは十分に長く書いてある。".repeat(15))
         .assert()
         .code(1);
 }
@@ -322,4 +325,44 @@ fn the_measures_of_a_document_are_numbers() {
     ] {
         assert!(measures[field].is_number(), "{field}  {measures}");
     }
+}
+
+#[test]
+fn a_run_of_conjunctions_at_the_head_of_the_sentences_is_a_finding() {
+    let report = json(
+        unlp()
+            .args(["stdin", "--json"])
+            .write_stdin("さらに規則を数える。また、規則を並べる。したがって規則が残る。"),
+    );
+    assert_eq!(report["total"]["by_rule"]["S06"], 1);
+    let findings = report["documents"][0]["score"]["findings"]
+        .as_array()
+        .unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding["rule"] == "S06"
+                && finding["excerpt"] == "さらに、また、したがって"),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn a_run_of_short_sentences_is_a_finding() {
+    let text = format!(
+        "{}窓が開く。鍵が回る。値が減る。",
+        "この文は十五字を超える長さで書いてある。".repeat(16)
+    );
+    let report = json(unlp().args(["stdin", "--json"]).write_stdin(text));
+    assert_eq!(report["total"]["mode"]["kind"], "normalized");
+    assert_eq!(report["total"]["by_rule"]["D01"], 1);
+    let findings = report["documents"][0]["score"]["findings"]
+        .as_array()
+        .unwrap();
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding["rule"] == "D01" && finding["excerpt"] == "窓が開く。"),
+        "{findings:?}"
+    );
 }

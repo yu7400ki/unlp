@@ -8,6 +8,7 @@ use crate::document::Origin;
 use crate::sentence::{self, Sentence};
 
 mod context;
+mod d01;
 mod d02;
 mod f01;
 mod f02;
@@ -23,11 +24,13 @@ mod l02;
 mod l03;
 pub(crate) mod predicate;
 mod r02;
+mod run;
 mod s01;
 mod s02;
 mod s03;
 mod s04;
 mod s05;
+mod s06;
 mod surface;
 
 pub use context::{Context, WordList};
@@ -236,7 +239,10 @@ pub fn sentence_rules() -> Vec<Box<dyn SentenceRule>> {
 
 /// 文書の規則の一覧。
 pub fn document_rules() -> Vec<Box<dyn DocumentRule>> {
-    Vec::new()
+    vec![
+        Box::new(s06::LeadingConjunction),
+        Box::new(d01::ShortSentenceRun),
+    ]
 }
 
 /// 一覧にある規則の ID と anchor。

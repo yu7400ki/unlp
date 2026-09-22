@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 
 use crate::document::{Document, LineRange, Origin, Segment, SegmentKind};
 use crate::morph::Analyzer;
-use crate::rule::{Context, SentenceRule};
+use crate::rule::{Context, DocumentRule, SentenceRule};
 use crate::sentence::Sentence;
 
 static ANALYZER: LazyLock<Analyzer> = LazyLock::new(|| Analyzer::new().unwrap());
@@ -22,6 +22,25 @@ pub fn excerpts_with(rule: &dyn SentenceRule, context: &Context, text: &str) -> 
         sentences
             .iter()
             .flat_map(|sentence| rule.check(sentence, context))
+            .map(|finding| finding.excerpt().to_string())
+            .collect()
+    })
+}
+
+/// 同梱した辞書で解析した文に文書の規則を適用し、指摘の抜粋を返す。
+pub fn document_excerpts(rule: &dyn DocumentRule, text: &str) -> Vec<String> {
+    document_excerpts_with(rule, &CONTEXT, text)
+}
+
+/// `document_excerpts` の、語リストと敬体率を差し替える形。
+pub fn document_excerpts_with(
+    rule: &dyn DocumentRule,
+    context: &Context,
+    text: &str,
+) -> Vec<String> {
+    with_sentences(text, |sentences| {
+        rule.check(sentences, context)
+            .iter()
             .map(|finding| finding.excerpt().to_string())
             .collect()
     })
