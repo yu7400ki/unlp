@@ -1,12 +1,10 @@
 use std::ops::Range;
 
-use serde::Serialize;
-
 use crate::document::{Document, Segment};
 use crate::token::Token;
 
 /// Segment から切り出した 1 文。`byte_range` は Segment の文字列の中の位置。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Sentence<'a> {
     segment: &'a Segment,
     byte_range: Range<usize>,
@@ -37,9 +35,9 @@ impl<'a> Sentence<'a> {
     }
 }
 
-/// ひらがな、カタカナ、漢字のいずれかであるか。
+/// ひらがな、カタカナ、漢字、繰り返し記号の々と〆のいずれかであるか。
 pub fn is_japanese(c: char) -> bool {
-    matches!(c, '\u{3041}'..='\u{309f}' | '\u{30a0}'..='\u{30ff}' | '\u{4e00}'..='\u{9fff}')
+    matches!(c, '\u{3005}' | '\u{3006}' | '\u{3041}'..='\u{309f}' | '\u{30a0}'..='\u{30ff}' | '\u{4e00}'..='\u{9fff}')
 }
 
 /// 文書のすべての Segment を文に分割する。
@@ -53,13 +51,28 @@ pub fn ja_chars(sentences: &[Sentence]) -> usize {
 }
 
 /// Segment の文字列を `。！？` と改行で分割する。鉤括弧・丸括弧・バッククォートの
-/// 内側では分割せず、日本語の文字を含まない文は返さない。
+/// 内側では分割せず、閉じていないものは空行で解消する。日本語の文字を含まない文は返さない。
 pub fn split_sentences(segment: &Segment) -> Vec<Sentence<'_>> {
+    let text = &segment.text;
     let mut sentences = Vec::new();
     let mut closers: Vec<char> = Vec::new();
     let mut in_code_span = false;
     let mut start = 0;
-    for (index, c) in segment.text.char_indices() {
+    let mut line_start = 0;
+    for (index, c) in text.char_indices() {
+        if c == '\n' {
+            let blank_line = text[line_start..index].trim().is_empty();
+            line_start = index + 1;
+            if blank_line {
+                closers.clear();
+                in_code_span = false;
+            } else if !closers.is_empty() || in_code_span {
+                continue;
+            }
+            push_sentence(&mut sentences, segment, start..index);
+            start = index + 1;
+            continue;
+        }
         match c {
             '`' => in_code_span = !in_code_span,
             _ if in_code_span => {}
@@ -75,14 +88,10 @@ pub fn split_sentences(segment: &Segment) -> Vec<Sentence<'_>> {
                 push_sentence(&mut sentences, segment, start..end);
                 start = end;
             }
-            '\n' => {
-                push_sentence(&mut sentences, segment, start..index);
-                start = index + 1;
-            }
             _ => {}
         }
     }
-    push_sentence(&mut sentences, segment, start..segment.text.len());
+    push_sentence(&mut sentences, segment, start..text.len());
     sentences
 }
 
@@ -161,6 +170,19 @@ mod tests {
     #[test]
     fn keeps_code_spans_whole() {
         assert_eq!(texts("`a。b` は識別子だ。"), ["`a。b` は識別子だ。"]);
+    }
+
+    #[test]
+    fn a_blank_line_closes_what_is_left_open() {
+        assert_eq!(texts("彼は「行く。\n\n次だ。"), ["彼は「行く。", "次だ。"]);
+        assert_eq!(texts("`コード\n\n文だ。"), ["`コード", "文だ。"]);
+    }
+
+    #[test]
+    fn counts_repetition_marks_as_japanese() {
+        let segment = segment("日々の時々。");
+        assert_eq!(ja_chars(&split_sentences(&segment)), 5);
+        assert_eq!(ja_chars(&split_sentences(&self::segment("〆だ。"))), 2);
     }
 
     #[test]
