@@ -13,6 +13,7 @@ mod f01;
 mod f02;
 mod f03;
 mod f04;
+pub(crate) use f04::ARROWS;
 mod f05;
 mod f06;
 #[cfg(test)]

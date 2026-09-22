@@ -9,6 +9,12 @@ const HINT: &str = "括弧か句点で分ける。矢印は表とコードに限
 /// 2 倍ダッシュ。
 const DOUBLE_DASH: &str = "——";
 
+/// 1 つでも数えるダッシュ。
+const DASH: char = '—';
+
+/// 地の文で数える矢印。表のセルではこの矢印を抽出の段で空白にする。
+pub(crate) const ARROWS: [char; 1] = ['→'];
+
 /// 記号に添える前後の文字数。
 const AROUND: usize = 10;
 
@@ -29,7 +35,7 @@ impl SentenceRule for DashAndArrow {
         let text = sentence.text();
         let dashes = surface::matches(text, [DOUBLE_DASH]);
         let marks = text
-            .match_indices(['—', '→'])
+            .match_indices(|c: char| c == DASH || ARROWS.contains(&c))
             .map(|(index, mark)| index..index + mark.len())
             .filter(|mark| !dashes.iter().any(|dash| dash.contains(&mark.start)));
         let ranges = dashes

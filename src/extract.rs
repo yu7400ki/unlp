@@ -13,9 +13,6 @@ pub const STDIN_NAME: &str = "<stdin>";
 /// 強調の記法の長さ。`*` と `_` のいずれでも 1 バイト。
 const EMPHASIS: usize = 1;
 
-/// 表のセルで空白に置き換える矢印。
-const ARROW: char = '→';
-
 /// テキスト全体を 1 つの Prose Segment とする文書。`name` が Segment の位置の path になる。
 pub fn text_document(name: String, text: &str) -> Document {
     let origin = Origin {
@@ -251,7 +248,7 @@ impl<'a> Blocks<'a> {
 /// 範囲に現れる矢印の範囲。
 fn arrows(text: &str, body: &Range<usize>) -> Vec<Range<usize>> {
     text[body.clone()]
-        .match_indices(ARROW)
+        .match_indices(crate::rule::ARROWS)
         .map(|(at, arrow)| body.start + at..body.start + at + arrow.len())
         .collect()
 }
