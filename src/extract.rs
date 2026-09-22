@@ -32,8 +32,8 @@ pub fn text_document(name: String, text: &str) -> Document {
 
 /// Markdown の本文を Segment とする文書。段落、見出し、箇条書きの項目、引用ブロックの本文を
 /// Prose、表のセルを TableCell にし、原文の順に並べる。コードブロックと HTML ブロックは
-/// Segment にしない。インラインコード、リンクの記法と URL、画像、行頭の引用記号は、同じ
-/// バイト数の空白に置き換えて文字の位置を保つ。
+/// Segment にしない。インラインコード、インライン HTML、リンクの記法と URL、画像、行頭の
+/// 引用記号は、同じバイト数の空白に置き換えて文字の位置を保つ。
 pub fn markdown_document(name: String, text: &str) -> Document {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
@@ -264,10 +264,34 @@ impl Lines {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
     use super::*;
+    use crate::morph::Analyzer;
+    use crate::rule::harness::CONTEXT;
+    use crate::score::DEFAULT_FLOOR;
+
+    static ANALYZER: LazyLock<Analyzer> = LazyLock::new(|| Analyzer::new().unwrap());
+
+    /// 規則集の見出しの下に置く検出例と、それを数える規則。
+    const EXAMPLES: [(&str, [&str; 2]); 3] = [
+        ("S02", ["これは", "それらは"]),
+        ("L03", ["失敗し始める", "一杯になった瞬間"]),
+        ("S05", ["だけでなく", "静的ではなく"]),
+    ];
 
     fn document(markdown: &str) -> Document {
         markdown_document("t".to_string(), markdown)
+    }
+
+    /// Markdown を抽出して規則を適用し、指摘の規則 ID を返す。
+    fn rules(markdown: &str) -> Vec<String> {
+        let document = document(markdown);
+        let sentences = ANALYZER.analyze_document(&document);
+        crate::rule::check(&sentences, &CONTEXT, DEFAULT_FLOOR)
+            .iter()
+            .map(|finding| finding.rule().to_string())
+            .collect()
     }
 
     fn texts(markdown: &str) -> Vec<String> {
@@ -415,6 +439,17 @@ mod tests {
             crate::sentence::inside_bold(text, &bold[0]).trim(),
             "太字の文字"
         );
+    }
+
+    #[test]
+    fn a_code_span_keeps_an_example_out_of_the_findings() {
+        for (rule, examples) in EXAMPLES {
+            let line = format!("検出する例: `{}`、`{}`", examples[0], examples[1]);
+            assert!(rules(&line).is_empty(), "{line}");
+            for example in examples {
+                assert_eq!(rules(example), [rule], "{example}");
+            }
+        }
     }
 
     #[test]
