@@ -37,7 +37,7 @@ mod tests {
         assert_eq!(excerpts("元のファイルは無傷です。"), ["無傷"]);
         assert_eq!(excerpts("ホバーの手応えを整える。"), ["手応え"]);
         assert_eq!(excerpts("初回だけ代を払う。"), ["代を払"]);
-        assert_eq!(excerpts("後で仕様に噛みつく。"), ["噛み"]);
+        assert_eq!(excerpts("いずれ仕様に牙をむく。"), ["に牙"]);
         assert_eq!(excerpts("静かな失敗が続く。"), ["静かな失敗"]);
         assert_eq!(excerpts("優雅に終了する。"), ["優雅に"]);
         assert_eq!(excerpts("これは魔法ではない。"), ["魔法"]);

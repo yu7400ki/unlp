@@ -2,7 +2,7 @@ use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, lemma, surface}
 use crate::sentence::Sentence;
 
 const ID: RuleId = RuleId::new(Layer::Lexical, 1);
-const HINT: &str = "その分野で通っている語を使う: メニュー、メッセージ、ウィンドウ、キー、フラグ、ビルドする、キャッシュ、コールドスタート";
+const HINT: &str = "その分野で通っている語を使う: メニュー、メッセージ、ウィンドウ、キー、フラグ、フォーカスリング、ビルドする、高速パス、雛形、コールドスタート";
 const PHRASES: &str = "phrases";
 const VERBS: &str = "verbs";
 
@@ -52,8 +52,8 @@ mod tests {
     fn a_verb_of_the_list_is_a_finding_in_any_inflection() {
         assert_eq!(excerpts("古いログを掃く。"), ["掃く"]);
         assert_eq!(excerpts("古いログを掃いた。"), ["掃い"]);
-        assert_eq!(excerpts("値が据わっていない。"), ["据わっ"]);
         assert_eq!(excerpts("結果を濾して返す。"), ["濾し"]);
+        assert_eq!(excerpts("候補を濾す。"), ["濾す"]);
     }
 
     #[test]
@@ -74,8 +74,8 @@ mod tests {
     #[test]
     fn the_findings_follow_the_order_of_the_text() {
         assert_eq!(
-            excerpts("電文を掃いてから品書きに戻す。"),
-            ["電文", "掃い", "品書き"]
+            excerpts("焦点の輪を掃いてから品書きに戻す。"),
+            ["焦点の輪", "掃い", "品書き"]
         );
     }
 }
