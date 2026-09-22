@@ -31,9 +31,9 @@ pub fn text_document(name: String, text: &str) -> Document {
 }
 
 /// Markdown の本文を Segment とする文書。段落、見出し、箇条書きの項目、引用ブロックの本文を
-/// Prose、表のセルを TableCell にし、原文の順に並べる。コードブロックと HTML ブロックは
-/// Segment にしない。インラインコード、インライン HTML、リンクの記法と URL、画像、行頭の
-/// 引用記号は、同じバイト数の空白に置き換えて文字の位置を保つ。
+/// Prose、表のセルを TableCell にし、原文の順に並べる。コードブロックは Segment にしない。
+/// インラインコード、インライン HTML、リンクの記法と URL、画像、行頭の引用記号は、同じ
+/// バイト数の空白に置き換えて文字の位置を保つ。
 pub fn markdown_document(name: String, text: &str) -> Document {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS);
@@ -58,8 +58,8 @@ struct Blocks<'a> {
     lines: Lines,
     /// 開いているブロック。内側のものが末尾。
     open: Vec<Block>,
-    /// 本文にしないブロック（コードブロック、HTML ブロック）の深さ。
-    hidden: usize,
+    /// コードブロックの内側か。
+    code_block: bool,
     /// 閉じた順の Segment。本文の始まりを鍵に原文の順へ戻す。
     closed: Vec<(usize, Segment)>,
 }
@@ -81,7 +81,7 @@ impl<'a> Blocks<'a> {
             text,
             lines: Lines::new(text),
             open: Vec::new(),
-            hidden: 0,
+            code_block: false,
             closed: Vec::new(),
         }
     }
@@ -90,7 +90,7 @@ impl<'a> Blocks<'a> {
         match event {
             Event::Start(tag) => self.start(tag, range),
             Event::End(tag) => self.end(tag, range),
-            _ if self.hidden > 0 => {}
+            _ if self.code_block => {}
             Event::Text(_) => self.body(range),
             Event::SoftBreak | Event::HardBreak => {
                 self.body(range.clone());
@@ -103,8 +103,8 @@ impl<'a> Blocks<'a> {
 
     fn start(&mut self, tag: Tag, range: Range<usize>) {
         match tag {
-            Tag::CodeBlock(_) | Tag::HtmlBlock => self.hidden += 1,
-            _ if self.hidden > 0 => {}
+            Tag::CodeBlock(_) => self.code_block = true,
+            _ if self.code_block => {}
             Tag::Paragraph | Tag::Heading { .. } | Tag::Item => self.open(SegmentKind::Prose),
             Tag::TableCell => self.open(SegmentKind::TableCell),
             Tag::Strong => self.body(range.start..range.start + BOLD.len()),
@@ -122,8 +122,8 @@ impl<'a> Blocks<'a> {
 
     fn end(&mut self, tag: TagEnd, range: Range<usize>) {
         match tag {
-            TagEnd::CodeBlock | TagEnd::HtmlBlock => self.hidden -= 1,
-            _ if self.hidden > 0 => {}
+            TagEnd::CodeBlock => self.code_block = false,
+            _ if self.code_block => {}
             TagEnd::Paragraph | TagEnd::Heading(_) | TagEnd::Item | TagEnd::TableCell => {
                 self.close();
             }
