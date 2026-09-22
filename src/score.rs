@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use crate::rule::{Finding, Layer, RuleId};
+use crate::sentence::{self, Sentence};
 
 /// 正規化した点で採点する日本語文字数の下限。
 pub const DEFAULT_FLOOR: usize = 300;
@@ -11,7 +12,7 @@ pub const DEFAULT_FLOOR: usize = 300;
 #[derive(Debug, Clone, Serialize)]
 pub struct Report {
     pub documents: Vec<DocumentScore>,
-    pub total: Score,
+    pub total: Total,
 }
 
 /// 文書 1 つの結果。
@@ -21,19 +22,30 @@ pub struct DocumentScore {
     pub score: Score,
 }
 
-/// 採点結果。
+/// 文書 1 つの採点結果。
 #[derive(Debug, Clone, Serialize)]
 pub struct Score {
-    pub ja_chars: usize,
-    pub mode: ScoreMode,
-    pub by_rule: BTreeMap<RuleId, usize>,
-    pub measures: Measures,
-    pub findings: Vec<Finding>,
+    ja_chars: usize,
+    sentences: usize,
+    mode: ScoreMode,
+    by_rule: BTreeMap<RuleId, usize>,
+    measures: Measures,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    findings: Vec<Finding>,
+}
+
+/// 文書ごとの結果を日本語文字数で加重した集計。
+#[derive(Debug, Clone, Serialize)]
+pub struct Total {
+    ja_chars: usize,
+    sentences: usize,
+    mode: ScoreMode,
+    by_rule: BTreeMap<RuleId, usize>,
 }
 
 /// 点の表し方。
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ScoreMode {
     Normalized {
         per_1000: f64,
@@ -53,14 +65,22 @@ pub struct Measures {
 }
 
 impl Score {
-    /// 日本語文字数が `floor` 以上なら正規化した点、未満なら件数で採点する。
-    pub fn new(ja_chars: usize, findings: Vec<Finding>, measures: Measures, floor: usize) -> Self {
+    /// 文と指摘から採点する。日本語文字数が `floor` 以上なら正規化した点、未満なら件数で
+    /// 判断する。
+    pub fn new(
+        sentences: &[Sentence],
+        findings: Vec<Finding>,
+        measures: Measures,
+        floor: usize,
+    ) -> Self {
+        let ja_chars = sentence::ja_chars(sentences);
         let mut by_rule = BTreeMap::new();
         for finding in &findings {
             *by_rule.entry(finding.rule()).or_insert(0) += 1;
         }
         Self {
             ja_chars,
+            sentences: sentences.len(),
             mode: mode_for(ja_chars, floor),
             by_rule,
             measures,
@@ -68,29 +88,84 @@ impl Score {
         }
     }
 
-    /// 点がしきい値を超えているか。件数で採点したときは構造か語彙の指摘があれば超過とする。
-    pub fn exceeds(&self, threshold: f64) -> bool {
-        match &self.mode {
-            ScoreMode::Normalized { per_1000, .. } => *per_1000 > threshold,
-            ScoreMode::CountOnly => self
-                .by_rule
-                .keys()
-                .any(|rule| matches!(rule.layer(), Layer::Structure | Layer::Lexical)),
-        }
+    pub fn ja_chars(&self) -> usize {
+        self.ja_chars
+    }
+
+    pub fn sentences(&self) -> usize {
+        self.sentences
+    }
+
+    pub fn mode(&self) -> &ScoreMode {
+        &self.mode
+    }
+
+    pub fn by_rule(&self) -> &BTreeMap<RuleId, usize> {
+        &self.by_rule
+    }
+
+    pub fn measures(&self) -> &Measures {
+        &self.measures
+    }
+
+    pub fn findings(&self) -> &[Finding] {
+        &self.findings
     }
 
     /// 指摘の件数。
     pub fn finding_count(&self) -> usize {
         self.by_rule.values().sum()
     }
+
+    /// 点がしきい値を超えているか。
+    pub fn exceeds(&self, threshold: f64) -> bool {
+        exceeds(&self.mode, &self.by_rule, threshold)
+    }
+
+    /// 指摘の列を落とし、集計だけを残す。
+    pub fn forget_findings(&mut self) {
+        self.findings.clear();
+    }
+}
+
+impl Total {
+    pub fn ja_chars(&self) -> usize {
+        self.ja_chars
+    }
+
+    pub fn sentences(&self) -> usize {
+        self.sentences
+    }
+
+    pub fn mode(&self) -> &ScoreMode {
+        &self.mode
+    }
+
+    pub fn by_rule(&self) -> &BTreeMap<RuleId, usize> {
+        &self.by_rule
+    }
+
+    /// 指摘の件数。
+    pub fn finding_count(&self) -> usize {
+        self.by_rule.values().sum()
+    }
+
+    /// 点がしきい値を超えているか。
+    pub fn exceeds(&self, threshold: f64) -> bool {
+        exceeds(&self.mode, &self.by_rule, threshold)
+    }
 }
 
 impl Report {
-    /// 文書ごとの結果と、日本語文字数で加重した全体の結果をまとめる。
+    /// 文書ごとの結果と、それを合算した集計をまとめる。
     pub fn new(documents: Vec<DocumentScore>, floor: usize) -> Self {
         let ja_chars = documents
             .iter()
             .map(|document| document.score.ja_chars)
+            .sum();
+        let sentences = documents
+            .iter()
+            .map(|document| document.score.sentences)
             .sum();
         let mut by_rule: BTreeMap<RuleId, usize> = BTreeMap::new();
         for document in &documents {
@@ -98,12 +173,11 @@ impl Report {
                 *by_rule.entry(*rule).or_insert(0) += count;
             }
         }
-        let total = Score {
+        let total = Total {
             ja_chars,
+            sentences,
             mode: mode_for(ja_chars, floor),
             by_rule,
-            measures: Measures::default(),
-            findings: Vec::new(),
         };
         Self { documents, total }
     }
@@ -111,6 +185,13 @@ impl Report {
     /// 全体の点がしきい値を超えているか。
     pub fn exceeds(&self, threshold: f64) -> bool {
         self.total.exceeds(threshold)
+    }
+
+    /// 文書ごとの指摘の列を落とし、集計だけを残す。
+    pub fn forget_findings(&mut self) {
+        for document in &mut self.documents {
+            document.score.forget_findings();
+        }
     }
 }
 
@@ -125,12 +206,31 @@ fn mode_for(ja_chars: usize, floor: usize) -> ScoreMode {
     }
 }
 
+/// 正規化した点はしきい値との比較で、件数だけのときは構造か語彙の指摘の有無で判断する。
+fn exceeds(mode: &ScoreMode, by_rule: &BTreeMap<RuleId, usize>, threshold: f64) -> bool {
+    match mode {
+        ScoreMode::Normalized { per_1000, .. } => *per_1000 > threshold,
+        ScoreMode::CountOnly => by_rule
+            .keys()
+            .any(|rule| matches!(rule.layer(), Layer::Structure | Layer::Lexical)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
 
     use super::*;
-    use crate::document::{LineRange, Origin};
+    use crate::document::{LineRange, Origin, Segment, SegmentKind};
+    use crate::sentence::split_sentences;
+
+    fn segment(text: &str) -> Segment {
+        Segment {
+            text: text.to_string(),
+            origin: origin(),
+            kind: SegmentKind::Prose,
+        }
+    }
 
     fn origin() -> Origin {
         Origin {
@@ -144,81 +244,112 @@ mod tests {
         Finding::new(RuleId::new(layer, number), origin(), "x".to_string(), "h")
     }
 
-    fn score(ja_chars: usize, findings: Vec<Finding>) -> Score {
-        Score::new(ja_chars, findings, Measures::default(), DEFAULT_FLOOR)
+    fn score(text: &str, findings: Vec<Finding>) -> Score {
+        let segment = segment(text);
+        Score::new(
+            &split_sentences(&segment),
+            findings,
+            Measures::default(),
+            DEFAULT_FLOOR,
+        )
+    }
+
+    fn short(findings: Vec<Finding>) -> Score {
+        score("短い文だ。", findings)
+    }
+
+    #[test]
+    fn counts_chars_and_sentences_from_the_given_sentences() {
+        let score = score(
+            "型の doc が名乗る。設定を比べると動作が変わる。",
+            Vec::new(),
+        );
+        assert_eq!(score.ja_chars(), 19);
+        assert_eq!(score.sentences(), 2);
     }
 
     #[test]
     fn floor_switches_mode() {
+        let below = "あ".repeat(DEFAULT_FLOOR - 1);
+        let at = "あ".repeat(DEFAULT_FLOOR);
         assert!(matches!(
-            score(DEFAULT_FLOOR - 1, Vec::new()).mode,
+            score(&below, Vec::new()).mode(),
             ScoreMode::CountOnly
         ));
         assert!(matches!(
-            score(DEFAULT_FLOOR, Vec::new()).mode,
+            score(&at, Vec::new()).mode(),
             ScoreMode::Normalized { .. }
         ));
     }
 
     #[test]
     fn by_rule_counts_findings() {
-        let score = score(
-            10,
-            vec![
-                finding(Layer::Structure, 1),
-                finding(Layer::Structure, 1),
-                finding(Layer::Density, 2),
-            ],
-        );
-        assert_eq!(score.by_rule[&RuleId::new(Layer::Structure, 1)], 2);
-        assert_eq!(score.by_rule[&RuleId::new(Layer::Density, 2)], 1);
+        let score = short(vec![
+            finding(Layer::Structure, 1),
+            finding(Layer::Structure, 1),
+            finding(Layer::Density, 2),
+        ]);
+        assert_eq!(score.by_rule()[&RuleId::new(Layer::Structure, 1)], 2);
+        assert_eq!(score.by_rule()[&RuleId::new(Layer::Density, 2)], 1);
         assert_eq!(score.finding_count(), 3);
     }
 
     #[test]
     fn count_only_exceeds_on_structure_or_lexical() {
-        assert!(score(10, vec![finding(Layer::Structure, 1)]).exceeds(f64::MAX));
-        assert!(score(10, vec![finding(Layer::Lexical, 1)]).exceeds(f64::MAX));
-        assert!(!score(10, vec![finding(Layer::Density, 1)]).exceeds(f64::MAX));
-        assert!(!score(10, Vec::new()).exceeds(0.0));
+        assert!(short(vec![finding(Layer::Structure, 1)]).exceeds(f64::MAX));
+        assert!(short(vec![finding(Layer::Lexical, 1)]).exceeds(f64::MAX));
+        assert!(!short(vec![finding(Layer::Density, 1)]).exceeds(f64::MAX));
+        assert!(!short(Vec::new()).exceeds(0.0));
     }
 
     #[test]
     fn normalized_compares_the_point_with_the_threshold() {
-        let score = score(DEFAULT_FLOOR, vec![finding(Layer::Structure, 1)]);
-        assert!(!score.exceeds(0.0));
+        let text = "あ".repeat(DEFAULT_FLOOR);
+        assert!(!score(&text, vec![finding(Layer::Structure, 1)]).exceeds(0.0));
     }
 
     #[test]
-    fn total_sums_chars_and_findings() {
+    fn forgetting_findings_keeps_the_counts() {
+        let mut score = short(vec![finding(Layer::Structure, 1)]);
+        assert!(serde_json::to_string(&score).unwrap().contains("findings"));
+
+        score.forget_findings();
+        assert!(score.findings().is_empty());
+        assert_eq!(score.by_rule()[&RuleId::new(Layer::Structure, 1)], 1);
+        assert!(!serde_json::to_string(&score).unwrap().contains("findings"));
+    }
+
+    #[test]
+    fn the_total_sums_the_documents() {
         let report = Report::new(
             vec![
                 DocumentScore {
                     name: "a".to_string(),
-                    score: score(150, vec![finding(Layer::Structure, 1)]),
+                    score: score(&"あ".repeat(150), vec![finding(Layer::Structure, 1)]),
                 },
                 DocumentScore {
                     name: "b".to_string(),
-                    score: score(200, vec![finding(Layer::Structure, 1)]),
+                    score: score(&"い".repeat(200), vec![finding(Layer::Structure, 1)]),
                 },
             ],
             DEFAULT_FLOOR,
         );
         assert!(matches!(
-            report.documents[0].score.mode,
+            report.documents[0].score.mode(),
             ScoreMode::CountOnly
         ));
-        assert_eq!(report.total.ja_chars, 350);
-        assert_eq!(report.total.by_rule[&RuleId::new(Layer::Structure, 1)], 2);
-        assert!(matches!(report.total.mode, ScoreMode::Normalized { .. }));
+        assert_eq!(report.total.ja_chars(), 350);
+        assert_eq!(report.total.sentences(), 2);
+        assert_eq!(report.total.by_rule()[&RuleId::new(Layer::Structure, 1)], 2);
+        assert_eq!(report.total.finding_count(), 2);
+        assert!(matches!(report.total.mode(), ScoreMode::Normalized { .. }));
     }
 
     #[test]
     fn rule_id_and_layer_are_json_keys() {
-        let score = score(DEFAULT_FLOOR, vec![finding(Layer::Structure, 1)]);
-        let json = serde_json::to_string(&score).unwrap();
+        let json = serde_json::to_string(&short(vec![finding(Layer::Structure, 1)])).unwrap();
         assert!(json.contains(r#""by_rule":{"S01":1}"#), "{json}");
-        assert!(json.contains(r#""normalized":{"per_1000":0.0"#), "{json}");
+        assert!(json.contains(r#""mode":{"kind":"count_only"}"#), "{json}");
 
         let by_layer = BTreeMap::from([(Layer::Structure, 1.5)]);
         assert_eq!(

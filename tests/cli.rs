@@ -23,8 +23,10 @@ fn stdin_becomes_one_document_scored_by_ja_chars() {
     );
     assert_eq!(report["documents"][0]["name"], "<stdin>");
     assert_eq!(report["documents"][0]["score"]["ja_chars"], 19);
+    assert_eq!(report["documents"][0]["score"]["sentences"], 2);
     assert_eq!(report["total"]["ja_chars"], 19);
-    assert_eq!(report["total"]["mode"], "count_only");
+    assert_eq!(report["total"]["sentences"], 2);
+    assert_eq!(report["total"]["mode"]["kind"], "count_only");
 }
 
 #[test]
@@ -57,16 +59,20 @@ fn the_floor_switches_the_total_to_a_normalized_point() {
     let text = "日本語の文だ。".repeat(50);
     let report = json(unlp().args(["stdin", "--json"]).write_stdin(text));
     assert_eq!(report["total"]["ja_chars"], 300);
-    assert_eq!(report["total"]["mode"]["normalized"]["per_1000"], 0.0);
+    assert_eq!(report["total"]["sentences"], 50);
+    assert_eq!(report["total"]["mode"]["kind"], "normalized");
+    assert_eq!(report["total"]["mode"]["per_1000"], 0.0);
 }
 
 #[test]
 fn fail_over_passes_when_the_point_is_within_the_threshold() {
-    unlp()
-        .args(["stdin", "--fail-over", "0"])
-        .write_stdin("日本語の文だ。".repeat(50))
-        .assert()
-        .success();
+    let report = json(
+        unlp()
+            .args(["stdin", "--json", "--fail-over=0"])
+            .write_stdin("日本語の文だ。".repeat(50)),
+    );
+    assert_eq!(report["total"]["mode"]["kind"], "normalized");
+    assert_eq!(report["total"]["mode"]["per_1000"], 0.0);
 }
 
 #[test]
@@ -79,13 +85,22 @@ fn fail_over_stops_when_the_point_is_over_the_threshold() {
 }
 
 #[test]
-fn summary_keeps_the_totals() {
+fn summary_keeps_the_totals_without_the_findings() {
     unlp()
         .args(["stdin", "--summary"])
         .write_stdin("日本語だ。")
         .assert()
         .success()
         .stdout(contains("全体"));
+
+    let report = json(
+        unlp()
+            .args(["stdin", "--json", "--summary"])
+            .write_stdin("日本語だ。"),
+    );
+    assert_eq!(report["documents"][0]["score"]["ja_chars"], 4);
+    assert!(report["documents"][0]["score"]["by_rule"].is_object());
+    assert!(report["documents"][0]["score"]["findings"].is_null());
 }
 
 #[test]
