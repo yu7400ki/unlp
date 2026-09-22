@@ -1,3 +1,4 @@
+use crate::rule::predicate::{is_aux_verb, is_verb};
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
@@ -53,11 +54,11 @@ fn is_conjunctive_particle(token: &Token) -> bool {
 }
 
 fn is_beginning(token: &Token) -> bool {
-    token.pos.pos1 == Pos1::Verb && token.pos.pos2 == "非自立可能" && token.lemma == "始める"
+    is_verb(token, "始める") && token.pos.pos2 == "非自立可能"
 }
 
 fn is_past(token: &Token) -> bool {
-    token.pos.pos1 == Pos1::AuxVerb && token.lemma == "た"
+    is_aux_verb(token, "た")
 }
 
 fn is_moment(token: &Token) -> bool {

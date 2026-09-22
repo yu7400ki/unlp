@@ -1,6 +1,7 @@
+use crate::rule::predicate::{is_case_particle, is_sahen_noun, is_verb};
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::Sentence;
-use crate::token::{Pos1, Token};
+use crate::token::Token;
 
 const ID: RuleId = RuleId::new(Layer::Formulaic, 6);
 const HINT: &str = "「できる」「する」に戻す";
@@ -56,18 +57,6 @@ fn performs(tokens: &[Token], index: usize) -> Option<usize> {
             .get(index + 2)
             .is_some_and(|token| is_verb(token, "する"));
     follows_suru.then_some(index + 2)
-}
-
-fn is_sahen_noun(token: &Token) -> bool {
-    token.pos.pos1 == Pos1::Noun && token.pos.pos3 == "サ変可能"
-}
-
-fn is_verb(token: &Token, lemma: &str) -> bool {
-    token.pos.pos1 == Pos1::Verb && token.lemma == lemma
-}
-
-fn is_case_particle(token: &Token, surface: &str) -> bool {
-    token.pos.pos1 == Pos1::Particle && token.pos.pos2 == "格助詞" && token.surface == surface
 }
 
 #[cfg(test)]

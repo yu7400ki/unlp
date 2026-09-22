@@ -1,3 +1,4 @@
+use crate::rule::predicate::is_topic_particle;
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
@@ -29,7 +30,7 @@ impl SentenceRule for LeadingDemonstrative {
         }
         let range = tokens
             .get(next)
-            .filter(|token| is_topic_particle(token))
+            .filter(|token| is_topic_particle(token, "は") || is_topic_particle(token, "も"))
             .map(|particle| head.byte_range.start..particle.byte_range.end);
         surface::findings_at(ID, sentence, range.into_iter().collect(), HINT)
     }
@@ -41,12 +42,6 @@ fn is_demonstrative(token: &Token) -> bool {
 
 fn is_plural_suffix(token: &Token) -> bool {
     token.pos.pos1 == Pos1::Suffix && token.surface == "ら"
-}
-
-fn is_topic_particle(token: &Token) -> bool {
-    token.pos.pos1 == Pos1::Particle
-        && token.pos.pos2 == "係助詞"
-        && matches!(token.surface.as_str(), "は" | "も")
 }
 
 #[cfg(test)]

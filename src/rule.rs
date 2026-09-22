@@ -18,6 +18,7 @@ mod f06;
 #[cfg(test)]
 pub(crate) mod harness;
 mod l03;
+mod predicate;
 mod s01;
 mod s02;
 mod s03;

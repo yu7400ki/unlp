@@ -1,3 +1,4 @@
+use crate::rule::predicate::{is_aux_verb, is_topic_particle};
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
@@ -28,7 +29,9 @@ impl SentenceRule for NegativeContrast {
                 .tokens()
                 .windows(3)
                 .filter(|window| {
-                    is_copula(&window[0]) && is_topic_particle(&window[1]) && is_nai(&window[2])
+                    is_copula(&window[0])
+                        && is_topic_particle(&window[1], "は")
+                        && is_nai(&window[2])
                 })
                 .map(|window| window[0].byte_range.start..window[2].byte_range.end),
         );
@@ -37,11 +40,7 @@ impl SentenceRule for NegativeContrast {
 }
 
 fn is_copula(token: &Token) -> bool {
-    token.pos.pos1 == Pos1::AuxVerb && token.lemma == "だ" && token.surface == "で"
-}
-
-fn is_topic_particle(token: &Token) -> bool {
-    token.pos.pos1 == Pos1::Particle && token.pos.pos2 == "係助詞" && token.surface == "は"
+    is_aux_verb(token, "だ") && token.surface == "で"
 }
 
 fn is_nai(token: &Token) -> bool {

@@ -1,6 +1,7 @@
 use std::ops::Range;
 
-use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, WordList};
+use crate::rule::predicate::{is_aux_verb, is_case_particle, is_sahen_noun, is_verb};
+use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, WordList, surface};
 use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
 
@@ -28,7 +29,7 @@ impl SentenceRule for InanimateSpeaker {
     fn check(&self, sentence: &Sentence, context: &Context) -> Vec<Finding> {
         let tokens = sentence.tokens();
         let list = context.list(ID);
-        let mut findings = Vec::new();
+        let mut ranges = Vec::new();
         for (index, particle) in tokens.iter().enumerate() {
             if !is_case_particle(particle, "が") {
                 continue;
@@ -45,16 +46,12 @@ impl SentenceRule for InanimateSpeaker {
             let Some(verb) = speech_verb(tokens, index, list) else {
                 continue;
             };
-            let excerpt = &sentence.text()[tokens[subject.start].byte_range.start
-                ..tokens[verb_end(tokens, verb)].byte_range.end];
-            findings.push(Finding::new(
-                ID,
-                sentence.segment().origin.clone(),
-                excerpt.to_string(),
-                HINT,
-            ));
+            ranges.push(
+                tokens[subject.start].byte_range.start
+                    ..tokens[verb_end(tokens, verb)].byte_range.end,
+            );
         }
-        findings
+        surface::findings_at(ID, sentence, ranges, HINT)
     }
 }
 
@@ -102,10 +99,6 @@ fn is_common_noun(token: &Token) -> bool {
     token.pos.pos1 == Pos1::Noun && matches!(token.pos.pos2.as_str(), "普通名詞" | "固有名詞")
 }
 
-fn is_case_particle(token: &Token, surface: &str) -> bool {
-    token.pos.pos1 == Pos1::Particle && token.pos.pos2 == "格助詞" && token.surface == surface
-}
-
 fn is_comma(token: &Token) -> bool {
     token.pos.pos1 == Pos1::SupplementarySymbol && token.pos.pos2 == "読点"
 }
@@ -118,11 +111,7 @@ fn is_speech(tokens: &[Token], position: usize, list: &WordList) -> bool {
     }
     match token.pos.pos1 {
         Pos1::Verb => true,
-        Pos1::Noun => {
-            token.pos.pos2 == "普通名詞"
-                && token.pos.pos3 == "サ変可能"
-                && is_suru(tokens.get(position + 1))
-        }
+        Pos1::Noun => is_sahen_noun(token) && is_suru(tokens.get(position + 1)),
         _ => false,
     }
 }
@@ -139,9 +128,7 @@ fn verb_end(tokens: &[Token], position: usize) -> usize {
 /// 「語られる」「宣言される」のように受け身が続くか。
 fn passive_follows(tokens: &[Token], position: usize) -> bool {
     let next = tokens.get(verb_end(tokens, position) + 1);
-    next.is_some_and(|token| {
-        token.pos.pos1 == Pos1::AuxVerb && matches!(token.lemma.as_str(), "れる" | "られる")
-    })
+    next.is_some_and(|token| is_aux_verb(token, "れる") || is_aux_verb(token, "られる"))
 }
 
 /// 「述べると書く」のように引用の「と」が続くか。
@@ -152,7 +139,7 @@ fn quote_follows(tokens: &[Token], position: usize) -> bool {
 }
 
 fn is_suru(token: Option<&Token>) -> bool {
-    token.is_some_and(|token| token.pos.pos1 == Pos1::Verb && token.lemma == "する")
+    token.is_some_and(|token| is_verb(token, "する"))
 }
 
 #[cfg(test)]
