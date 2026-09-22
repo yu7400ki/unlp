@@ -106,6 +106,19 @@ fn the_rule_book_has_no_findings() {
 }
 
 #[test]
+fn several_rules_count_their_findings_on_one_input() {
+    let report = json(unlp().args(["stdin", "--json"]).write_stdin(
+        "これは意図的です。つまり、私が設計しました。**意図したものです。**エラーを出さずに失敗し始めます。ご指示ください。",
+    ));
+    let by_rule = report["documents"][0]["score"]["by_rule"]
+        .as_object()
+        .unwrap();
+    let rules: Vec<&str> = by_rule.keys().map(String::as_str).collect();
+    assert_eq!(rules, ["F01", "F02", "F03", "L03", "S02", "S03", "S04"]);
+    assert_eq!(report["total"]["by_rule"]["F03"], 1);
+}
+
+#[test]
 fn check_walks_directories_and_skips_excluded_ones() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "含まれる文だ。").unwrap();

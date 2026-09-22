@@ -17,6 +17,7 @@ mod f05;
 mod f06;
 #[cfg(test)]
 pub(crate) mod harness;
+mod l03;
 mod s01;
 mod s02;
 mod s03;
@@ -214,6 +215,7 @@ pub fn sentence_rules() -> Vec<Box<dyn SentenceRule>> {
         Box::new(s03::Scaffolding),
         Box::new(s04::FirstPerson),
         Box::new(s05::NegativeContrast),
+        Box::new(l03::EnglishRhythm),
         Box::new(d02::PredicatelessFragment),
         Box::new(f01::ClosingFormula),
         Box::new(f02::BoldConclusion),
