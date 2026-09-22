@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
+use crate::measure::Measures;
 use crate::rule::{Finding, Layer, RuleId};
 use crate::sentence::{self, Sentence};
 
@@ -52,16 +53,6 @@ pub enum ScoreMode {
         by_layer: BTreeMap<Layer, f64>,
     },
     CountOnly,
-}
-
-/// 参考値。計測していない欄は `None`。
-#[derive(Debug, Clone, Default, Serialize)]
-pub struct Measures {
-    pub polite_ratio: Option<f64>,
-    pub plain_ratio: Option<f64>,
-    pub wago_noun_ratio: Option<f64>,
-    pub wago_verb_ratio: Option<f64>,
-    pub ga_per_sentence: Option<f64>,
 }
 
 impl Score {

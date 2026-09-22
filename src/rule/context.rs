@@ -89,6 +89,14 @@ impl Context {
         self.polite_ratio
     }
 
+    /// 文書の敬体率を持たせた Context。
+    pub fn with_polite_ratio(&self, polite_ratio: f64) -> Self {
+        Self {
+            polite_ratio,
+            ..self.clone()
+        }
+    }
+
     /// 語リストから語を 1 つ外した Context。
     #[cfg(test)]
     pub(crate) fn without_word(&self, rule: RuleId, group: &str, word: &str) -> Self {
@@ -166,5 +174,17 @@ mod tests {
     #[test]
     fn the_polite_ratio_starts_at_zero() {
         assert_eq!(Context::defaults().polite_ratio(), 0.0);
+    }
+
+    #[test]
+    fn the_polite_ratio_of_a_document_keeps_the_words_and_the_weights() {
+        let context = Context::defaults().with_polite_ratio(0.75);
+        assert_eq!(context.polite_ratio(), 0.75);
+        assert!(
+            context
+                .list(RuleId::new(Layer::Structure, 1))
+                .contains("person", "利用者")
+        );
+        assert_eq!(context.weights()[&RuleId::new(Layer::Structure, 1)], 3.0);
     }
 }

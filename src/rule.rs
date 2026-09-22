@@ -21,7 +21,7 @@ pub(crate) mod harness;
 mod l01;
 mod l02;
 mod l03;
-mod predicate;
+pub(crate) mod predicate;
 mod r02;
 mod s01;
 mod s02;

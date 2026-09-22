@@ -7,8 +7,9 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use unlp::extract::{self, STDIN_NAME};
 use unlp::input;
+use unlp::measure::Measures;
 use unlp::morph::Analyzer;
-use unlp::score::{DEFAULT_FLOOR, DocumentScore, Measures, Report, Score, ScoreMode, Total};
+use unlp::score::{DEFAULT_FLOOR, DocumentScore, Report, Score, ScoreMode, Total};
 use unlp::{Document, Finding, Layer, rule};
 
 /// 日本語の文章に残る AI の癖を検出して採点する。
@@ -98,13 +99,15 @@ fn run() -> Result<bool> {
     let mut scores = Vec::new();
     for document in &documents {
         let sentences = analyzer.analyze_document(document);
+        let measures = Measures::of(&sentences);
+        let context = context.with_polite_ratio(measures.polite_ratio.unwrap_or_default());
         let findings = rule::check(&sentences, &context, DEFAULT_FLOOR);
         scores.push(DocumentScore {
             name: document.name.clone(),
             score: Score::new(
                 &sentences,
                 findings,
-                Measures::default(),
+                measures,
                 DEFAULT_FLOOR,
                 context.weights(),
             ),

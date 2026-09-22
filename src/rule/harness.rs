@@ -4,6 +4,7 @@ use std::sync::LazyLock;
 use crate::document::{Document, LineRange, Origin, Segment, SegmentKind};
 use crate::morph::Analyzer;
 use crate::rule::{Context, SentenceRule};
+use crate::sentence::Sentence;
 
 static ANALYZER: LazyLock<Analyzer> = LazyLock::new(|| Analyzer::new().unwrap());
 
@@ -17,6 +18,17 @@ pub fn excerpts(rule: &dyn SentenceRule, text: &str) -> Vec<String> {
 
 /// `excerpts` の、語リストと重みを差し替える形。
 pub fn excerpts_with(rule: &dyn SentenceRule, context: &Context, text: &str) -> Vec<String> {
+    with_sentences(text, |sentences| {
+        sentences
+            .iter()
+            .flat_map(|sentence| rule.check(sentence, context))
+            .map(|finding| finding.excerpt().to_string())
+            .collect()
+    })
+}
+
+/// 同梱した辞書で解析した文を渡す。
+pub fn with_sentences<T>(text: &str, read: impl FnOnce(&[Sentence]) -> T) -> T {
     let document = Document {
         name: "t".to_string(),
         segments: vec![Segment {
@@ -29,10 +41,5 @@ pub fn excerpts_with(rule: &dyn SentenceRule, context: &Context, text: &str) -> 
             kind: SegmentKind::Prose,
         }],
     };
-    ANALYZER
-        .analyze_document(&document)
-        .iter()
-        .flat_map(|sentence| rule.check(sentence, context))
-        .map(|finding| finding.excerpt().to_string())
-        .collect()
+    read(&ANALYZER.analyze_document(&document))
 }

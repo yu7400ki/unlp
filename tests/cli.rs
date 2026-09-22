@@ -303,3 +303,23 @@ fn a_translated_paragraph_counts_the_literal_translations() {
     )));
     assert_eq!(report["total"]["by_rule"]["L02"], 4);
 }
+
+#[test]
+fn the_measures_of_a_document_are_numbers() {
+    let report = json(
+        unlp()
+            .args(["stdin", "--json"])
+            .write_stdin("設定を比べると動作が変わります。値を追加する。窓が開く。"),
+    );
+    let measures = &report["documents"][0]["score"]["measures"];
+    for field in [
+        "polite_ratio",
+        "plain_ratio",
+        "wago_noun_ratio",
+        "wago_verb_ratio",
+        "final_wago_ratio",
+        "ga_per_sentence",
+    ] {
+        assert!(measures[field].is_number(), "{field}  {measures}");
+    }
+}
