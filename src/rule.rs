@@ -234,7 +234,7 @@ pub fn check(sentences: &[Sentence], context: &Context, floor: usize) -> Vec<Fin
             findings.extend(rule.check(sentence, context));
         }
     }
-    let below_floor = sentence::ja_chars(sentences) < floor;
+    let below_floor = crate::score::below_floor(sentence::ja_chars(sentences), floor);
     for rule in document_rules() {
         if below_floor && !applies_below_floor(rule.id().layer()) {
             continue;
@@ -247,7 +247,10 @@ pub fn check(sentences: &[Sentence], context: &Context, floor: usize) -> Vec<Fin
 /// 下限未満の入力にも `DocumentRule` を適用する層か。密度、レジスター、語種は文書全体の
 /// 割合で評価するため、下限以上の入力でだけ適用する。
 fn applies_below_floor(layer: Layer) -> bool {
-    !matches!(layer, Layer::Density | Layer::Register | Layer::Goshu)
+    match layer {
+        Layer::Structure | Layer::Lexical | Layer::Formulaic => true,
+        Layer::Density | Layer::Register | Layer::Goshu => false,
+    }
 }
 
 #[cfg(test)]

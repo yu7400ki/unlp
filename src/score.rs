@@ -226,7 +226,7 @@ fn mode_for(
     by_rule: &BTreeMap<RuleId, usize>,
     weights: &BTreeMap<RuleId, f64>,
 ) -> ScoreMode {
-    if ja_chars == 0 || ja_chars < floor {
+    if below_floor(ja_chars, floor) {
         return ScoreMode::CountOnly;
     }
     let mut by_layer: BTreeMap<Layer, f64> = BTreeMap::new();
@@ -236,9 +236,15 @@ fn mode_for(
             *count as f64 * weight * 1000.0 / ja_chars as f64;
     }
     ScoreMode::Normalized {
+        // f64 の `sum` は空の列で -0.0 を返すため、0.0 から畳む。
         per_1000: by_layer.values().fold(0.0, |total, point| total + point),
         by_layer,
     }
+}
+
+/// 正規化した点を出さずに件数で判断する入力か。日本語の文字が無い入力も含む。
+pub fn below_floor(ja_chars: usize, floor: usize) -> bool {
+    ja_chars == 0 || ja_chars < floor
 }
 
 /// 正規化した点はしきい値との比較で、件数だけのときは構造か語彙の指摘の有無で判断する。

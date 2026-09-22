@@ -38,15 +38,15 @@ impl SentenceRule for InanimateSpeaker {
             };
             if tokens[subject.clone()]
                 .iter()
-                .any(|token| list.contains(PERSON, &token.lemma))
+                .any(|token| is_person(token, list))
             {
                 continue;
             }
             let Some(verb) = speech_verb(tokens, index, list) else {
                 continue;
             };
-            let excerpt = &sentence.text()
-                [tokens[subject.start].byte_range.start..tokens[verb].byte_range.end];
+            let excerpt = &sentence.text()[tokens[subject.start].byte_range.start
+                ..tokens[verb_end(tokens, verb)].byte_range.end];
             findings.push(Finding::new(
                 ID,
                 sentence.segment().origin.clone(),
@@ -86,6 +86,12 @@ fn speech_verb(tokens: &[Token], particle: usize, list: &WordList) -> Option<usi
         }
     }
     None
+}
+
+/// 人名の固有名詞か、語リストにある人を表す語。
+fn is_person(token: &Token, list: &WordList) -> bool {
+    (token.pos.pos1 == Pos1::Noun && token.pos.pos3 == "人名")
+        || list.contains(PERSON, &token.lemma)
 }
 
 fn is_phrase_token(token: &Token) -> bool {
@@ -190,7 +196,7 @@ mod tests {
     fn an_inanimate_subject_with_a_speech_verb_is_a_finding() {
         assert_eq!(excerpts("型の doc が名乗る。"), ["doc が名乗る"]);
         assert_eq!(excerpts("README が述べる。"), ["README が述べる"]);
-        assert_eq!(excerpts("README が主張する。"), ["README が主張"]);
+        assert_eq!(excerpts("README が主張する。"), ["README が主張する"]);
     }
 
     #[test]
@@ -206,6 +212,8 @@ mod tests {
         assert!(excerpts("筆者が主張する。").is_empty());
         assert!(excerpts("彼が答えると言う。").is_empty());
         assert!(excerpts("利用者が述べる。").is_empty());
+        assert!(excerpts("田中さんが教えてくれた。").is_empty());
+        assert!(excerpts("家康が訴える。").is_empty());
 
         let context = CONTEXT.without_word(ID, PERSON, "者");
         assert_eq!(
