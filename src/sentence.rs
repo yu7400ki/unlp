@@ -1,0 +1,188 @@
+use std::ops::Range;
+
+use serde::Serialize;
+
+use crate::document::{Document, Segment};
+use crate::token::Token;
+
+/// Segment から切り出した 1 文。`byte_range` は Segment の文字列の中の位置。
+#[derive(Debug, Clone, Serialize)]
+pub struct Sentence<'a> {
+    segment: &'a Segment,
+    byte_range: Range<usize>,
+    tokens: Vec<Token>,
+}
+
+impl<'a> Sentence<'a> {
+    pub fn segment(&self) -> &'a Segment {
+        self.segment
+    }
+
+    pub fn byte_range(&self) -> Range<usize> {
+        self.byte_range.clone()
+    }
+
+    /// 文の文字列。
+    pub fn text(&self) -> &'a str {
+        &self.segment.text[self.byte_range.clone()]
+    }
+
+    pub fn tokens(&self) -> &[Token] {
+        &self.tokens
+    }
+
+    /// 文に含まれる日本語の文字数。
+    pub fn ja_chars(&self) -> usize {
+        self.text().chars().filter(|c| is_japanese(*c)).count()
+    }
+}
+
+/// ひらがな、カタカナ、漢字のいずれかであるか。
+pub fn is_japanese(c: char) -> bool {
+    matches!(c, '\u{3041}'..='\u{309f}' | '\u{30a0}'..='\u{30ff}' | '\u{4e00}'..='\u{9fff}')
+}
+
+/// 文書のすべての Segment を文に分割する。
+pub fn split_document(document: &Document) -> Vec<Sentence<'_>> {
+    document.segments.iter().flat_map(split_sentences).collect()
+}
+
+/// 文の日本語文字数の合計。
+pub fn ja_chars(sentences: &[Sentence]) -> usize {
+    sentences.iter().map(Sentence::ja_chars).sum()
+}
+
+/// Segment の文字列を `。！？` と改行で分割する。鉤括弧・丸括弧・バッククォートの
+/// 内側では分割せず、日本語の文字を含まない文は返さない。
+pub fn split_sentences(segment: &Segment) -> Vec<Sentence<'_>> {
+    let mut sentences = Vec::new();
+    let mut closers: Vec<char> = Vec::new();
+    let mut in_code_span = false;
+    let mut start = 0;
+    for (index, c) in segment.text.char_indices() {
+        match c {
+            '`' => in_code_span = !in_code_span,
+            _ if in_code_span => {}
+            '「' => closers.push('」'),
+            '『' => closers.push('』'),
+            '（' => closers.push('）'),
+            _ if closers.last() == Some(&c) => {
+                closers.pop();
+            }
+            _ if !closers.is_empty() => {}
+            '。' | '！' | '？' => {
+                let end = index + c.len_utf8();
+                push_sentence(&mut sentences, segment, start..end);
+                start = end;
+            }
+            '\n' => {
+                push_sentence(&mut sentences, segment, start..index);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    push_sentence(&mut sentences, segment, start..segment.text.len());
+    sentences
+}
+
+fn push_sentence<'a>(sentences: &mut Vec<Sentence<'a>>, segment: &'a Segment, range: Range<usize>) {
+    let trimmed = trim(&segment.text, range);
+    if !segment.text[trimmed.clone()].chars().any(is_japanese) {
+        return;
+    }
+    sentences.push(Sentence {
+        segment,
+        byte_range: trimmed,
+        tokens: Vec::new(),
+    });
+}
+
+fn trim(text: &str, range: Range<usize>) -> Range<usize> {
+    let slice = &text[range.clone()];
+    let start = range.start + (slice.len() - slice.trim_start().len());
+    let trimmed = slice.trim();
+    start..start + trimmed.len()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroU32;
+
+    use super::*;
+    use crate::document::{LineRange, Origin, SegmentKind};
+
+    fn segment(text: &str) -> Segment {
+        Segment {
+            text: text.to_string(),
+            origin: Origin {
+                path: "t".to_string(),
+                lines: LineRange::new(NonZeroU32::MIN, NonZeroU32::MIN),
+                commit: None,
+            },
+            kind: SegmentKind::Prose,
+        }
+    }
+
+    fn texts(text: &str) -> Vec<String> {
+        let segment = segment(text);
+        split_sentences(&segment)
+            .iter()
+            .map(|sentence| sentence.text().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn splits_on_terminators() {
+        assert_eq!(
+            texts("型が名乗る。本当か！ そうか？"),
+            ["型が名乗る。", "本当か！", "そうか？"]
+        );
+    }
+
+    #[test]
+    fn splits_on_newlines() {
+        assert_eq!(texts("一つ目\r\n二つ目\n"), ["一つ目", "二つ目"]);
+    }
+
+    #[test]
+    fn keeps_brackets_whole() {
+        assert_eq!(
+            texts("彼は「行く。\n帰る。」と言った。次だ。"),
+            ["彼は「行く。\n帰る。」と言った。", "次だ。"]
+        );
+        assert_eq!(
+            texts("「外『内。』外。」終わり。"),
+            ["「外『内。』外。」終わり。"]
+        );
+        assert_eq!(texts("（補足。）続く。"), ["（補足。）続く。"]);
+    }
+
+    #[test]
+    fn keeps_code_spans_whole() {
+        assert_eq!(texts("`a。b` は識別子だ。"), ["`a。b` は識別子だ。"]);
+    }
+
+    #[test]
+    fn discards_sentences_without_japanese() {
+        assert_eq!(texts("abc def.\n---\n日本語だ。"), ["日本語だ。"]);
+    }
+
+    #[test]
+    fn counts_only_japanese_chars() {
+        let segment = segment("型の doc が名乗る。設定を比べると動作が変わる。");
+        let sentences = split_sentences(&segment);
+        assert_eq!(sentences.len(), 2);
+        assert_eq!(sentences[0].ja_chars(), 6);
+        assert_eq!(ja_chars(&sentences), 19);
+    }
+
+    #[test]
+    fn splits_every_segment_of_the_document() {
+        let document = Document {
+            name: "t".to_string(),
+            segments: vec![segment("一つ目。"), segment("二つ目。三つ目。")],
+        };
+        assert_eq!(split_document(&document).len(), 3);
+    }
+}
