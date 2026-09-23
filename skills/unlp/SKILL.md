@@ -20,7 +20,7 @@ Claude Code の hook からは `unlp diff --staged --fail-over 10` を実行す�
 
 ### unlp.toml
 
-対象のパスから上位に走査して最初に見つかったものを読む。`--config <path>` はそれより優先する。
+`check` は最初のパスから、他の副コマンドはカレントディレクトリから上位に走査して最初に見つかったものを読む。`--config <path>` はそれより優先する。
 
 ```toml
 threshold = 10

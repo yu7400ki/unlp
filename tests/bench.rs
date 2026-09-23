@@ -247,3 +247,28 @@ fn the_floor_of_the_config_reaches_the_bench() {
         .success()
         .stdout(contains("下限未満"));
 }
+
+#[test]
+fn a_reference_set_is_reported_without_a_judgment() {
+    let dir = corpus(
+        "[[set]]
+name = \"zenn\"
+side = \"human\"
+paths = [\"human/prose\"]
+
+[[set]]
+name = \"sonnet-prose\"
+side = \"claude\"
+paths = [\"human/prose\"]
+judge = false
+",
+    );
+    bench(&dir)
+        .assert()
+        .success()
+        .stdout(contains("受け入れ基準を満たす"))
+        .stdout(contains("参考  sonnet-prose  claude"));
+    let report = json(&mut bench(&dir));
+    assert_eq!(report["sets"][1]["verdict"], "reference");
+    assert_eq!(report["met"], true);
+}

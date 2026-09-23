@@ -418,6 +418,19 @@ mod tests {
     }
 
     #[test]
+    fn the_judge_field_is_read_and_defaults_to_true() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("manifest.toml"),
+            "[[set]]\nname = \"a\"\nside = \"claude\"\npaths = [\"a\"]\njudge = false\n\n[[set]]\nname = \"b\"\nside = \"human\"\npaths = [\"b\"]\n",
+        )
+        .unwrap();
+        let manifest = Manifest::load(&dir.path().join("manifest.toml")).unwrap();
+        let judges: Vec<bool> = manifest.sets().iter().map(|set| set.judge).collect();
+        assert_eq!(judges, [false, true]);
+    }
+
+    #[test]
     fn a_set_out_of_the_judgment_is_a_reference() {
         let set = Set {
             judge: false,
