@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::iter::repeat_n;
 use std::ops::Range;
 use std::path::Path;
 
@@ -68,7 +69,7 @@ pub fn source_document(name: String, text: &str, lang: SourceLang) -> Document {
                 range: node.range(),
                 face: *face,
                 kind: segment_kind(lang, &node, *face),
-                body: body(&node.text(), *face),
+                body: body(&node, *face),
             });
         }
     }
@@ -87,12 +88,138 @@ struct Part {
     body: String,
 }
 
-/// ノードの文字列から取り出す本文。
-fn body(text: &str, face: Face) -> String {
+/// ノードから取り出す本文。
+fn body(node: &Node<StrDoc<SupportLang>>, face: Face) -> String {
     match face {
-        Face::Comment => comment_body(text),
-        Face::StringLiteral => text.to_string(),
+        Face::Comment => comment_body(&node.text()),
+        Face::StringLiteral => blank_placeholders(&literal_body(node)),
     }
+}
+
+/// 文字列リテラルの値。区切り文字を除き、エスケープを復元し、補間を同じバイト長の空白にする。
+fn literal_body(node: &Node<StrDoc<SupportLang>>) -> String {
+    let mut body = String::new();
+    for child in node.children() {
+        match child.kind().as_ref() {
+            ESCAPE => body.push_str(&unescape(&child.text())),
+            kind if is_content(kind) => body.push_str(&content(&child)),
+            "string_start" | "string_end" => {}
+            _ if !child.is_named() => {}
+            _ => blanks(&mut body, child.range().len()),
+        }
+    }
+    body
+}
+
+/// エスケープを表すノードの種別。
+const ESCAPE: &str = "escape_sequence";
+
+/// 文字列リテラルの中身を表すノードの種別か。
+fn is_content(kind: &str) -> bool {
+    kind == "string_fragment" || kind.ends_with("_content")
+}
+
+/// 中身のノードの値。中のエスケープを復元し、他のノードを同じバイト長の空白にする。
+fn content(node: &Node<StrDoc<SupportLang>>) -> String {
+    let text = node.text();
+    let start = node.range().start;
+    let mut value = String::with_capacity(text.len());
+    let mut at = 0;
+    for child in node.children() {
+        let range = child.range();
+        let (from, to) = (range.start - start, range.end - start);
+        value.push_str(&text[at..from]);
+        if child.kind() == ESCAPE {
+            value.push_str(&unescape(&child.text()));
+        } else {
+            blanks(&mut value, to - from);
+        }
+        at = to;
+    }
+    value.push_str(&text[at..]);
+    value
+}
+
+/// エスケープが表す文字。文字を表さないものは空になる。
+fn unescape(escape: &str) -> String {
+    let mut chars = escape.chars();
+    if chars.next() != Some('\\') {
+        return escape.to_string();
+    }
+    match chars.next() {
+        Some('n') => "\n".to_string(),
+        Some('t') => "\t".to_string(),
+        Some('r') => "\r".to_string(),
+        Some('u' | 'U' | 'x') => code_point(chars.as_str()),
+        Some('0') | Some('\n') | None => String::new(),
+        Some(c) => c.to_string(),
+    }
+}
+
+/// 16 進の符号位置が表す文字。
+fn code_point(digits: &str) -> String {
+    let digits = digits.trim_start_matches('{').trim_end_matches('}');
+    u32::from_str_radix(digits, 16)
+        .ok()
+        .and_then(char::from_u32)
+        .map(String::from)
+        .unwrap_or_default()
+}
+
+/// プレースホルダーを同じバイト長の空白に置き換えた文字列。
+fn blank_placeholders(text: &str) -> String {
+    let mut blanked = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(['{', '$', '%']) {
+        blanked.push_str(&rest[..at]);
+        rest = &rest[at..];
+        let length = match placeholder(rest) {
+            Some(length) => {
+                blanks(&mut blanked, length);
+                length
+            }
+            None => {
+                let head = rest.chars().next().expect("探した文字がある");
+                blanked.push(head);
+                head.len_utf8()
+            }
+        };
+        rest = &rest[length..];
+    }
+    blanked.push_str(rest);
+    blanked
+}
+
+/// 先頭にあるプレースホルダーのバイト長。
+fn placeholder(text: &str) -> Option<usize> {
+    match text.strip_prefix('$') {
+        Some(rest) => braced(rest).map(|length| length + 1),
+        None => braced(text).or_else(|| conversion(text)),
+    }
+}
+
+/// `{` で囲んだ差し込みのバイト長。括弧、空白、引用符を挟むものは差し込みにしない。
+fn braced(text: &str) -> Option<usize> {
+    let rest = text.strip_prefix('{')?;
+    let end = rest.find('}')?;
+    let inside = &rest[..end];
+    let plain =
+        !inside.contains(['{', '}', '"', '\'', '`']) && !inside.contains(char::is_whitespace);
+    plain.then_some(end + 2)
+}
+
+/// `%` で始まる変換指定のバイト長。
+fn conversion(text: &str) -> Option<usize> {
+    let rest = text.strip_prefix('%')?;
+    let letter = rest.trim_start_matches(|c: char| matches!(c, '-' | '+' | '#' | '.' | '0'..='9'));
+    letter
+        .starts_with(|c: char| c.is_ascii_alphabetic())
+        .then_some(rest.len() - letter.len() + 2)
+}
+
+/// バイト長と同じ数の空白を足す。
+fn blanks(text: &mut String, length: usize) {
+    text.extend(repeat_n(' ', length));
 }
 
 /// コメントの記号を除いた本文。行をまたぐコメントは 1 行ずつ記号を除いて連ねる。
@@ -265,8 +392,8 @@ mod tests {
                 "内側の doc だ。",
                 "外側の doc を二行に分ける。",
                 "行のコメントだ。ブロックのコメントだ。",
-                "\"文字列だ。\"",
-                "r#\"生の文字列だ。\"#",
+                "文字列だ。",
+                "生の文字列だ。",
             ]
         );
         assert_eq!(
@@ -309,15 +436,75 @@ mod tests {
         assert_eq!(texts("a.rs", "/// **結論です。**\n"), ["**結論です。**"]);
     }
 
+    /// 記法と同じバイト数の空白。
+    fn blanked(notation: &str) -> String {
+        " ".repeat(notation.len())
+    }
+
     #[test]
     fn a_string_inside_an_interpolation_stays_in_the_outer_segment() {
         assert_eq!(
             texts("a.ts", "const t = `外 ${\"内の文字列\"} 外`;\n"),
-            ["`外 ${\"内の文字列\"} 外`"]
+            [format!("外 {} 外", blanked("${\"内の文字列\"}"))]
         );
         assert_eq!(
             texts("a.py", "w = f\"{d['キー']} だ\"\n"),
-            ["f\"{d['キー']} だ\""]
+            [format!("{} だ", blanked("{d['キー']}"))]
+        );
+    }
+
+    #[test]
+    fn a_string_keeps_its_value_without_the_delimiters() {
+        assert_eq!(
+            texts("a.rs", "fn f() { let s = \"一行目。\\n二行目。\"; }\n"),
+            ["一行目。\n二行目。"]
+        );
+        assert_eq!(
+            texts("a.rs", "fn f() { let s = \"引用の \\\"中\\\" だ。\"; }\n"),
+            ["引用の \"中\" だ。"]
+        );
+        assert_eq!(
+            texts("a.py", "s = '''三重の\n文字列だ。'''\n"),
+            ["三重の\n文字列だ。"]
+        );
+        assert_eq!(
+            texts("a.py", "s = r\"生の\\n文字列だ。\"\n"),
+            ["生の\\n文字列だ。"]
+        );
+        assert_eq!(
+            texts("a.go", "var x = \"符号位置の \\u3042 だ。\"\n"),
+            ["符号位置の あ だ。"]
+        );
+    }
+
+    #[test]
+    fn a_placeholder_becomes_blanks_of_the_same_length() {
+        assert_eq!(
+            texts("a.rs", "fn f() { format!(\"{name} を読み込めない\"); }\n"),
+            [format!("{} を読み込めない", blanked("{name}"))]
+        );
+        assert_eq!(
+            texts("a.rs", "fn f() { format!(\"{} と {:?} だ。\", 1, 2); }\n"),
+            [format!("{} と {} だ。", blanked("{}"), blanked("{:?}"))]
+        );
+        assert_eq!(
+            texts("a.py", "s = \"%s を %-3d 回だ。\"\n"),
+            [format!("{} を {} 回だ。", blanked("%s"), blanked("%-3d"))]
+        );
+    }
+
+    #[test]
+    fn a_sign_that_opens_no_placeholder_stays_in_the_body() {
+        assert_eq!(
+            texts("a.rs", "fn f() { let s = \"100% の値だ。\"; }\n"),
+            ["100% の値だ。"]
+        );
+        assert_eq!(
+            texts(
+                "a.rs",
+                "fn f() { let s = \"{ 空白を挟む } のは差し込みでない。\"; }\n"
+            ),
+            ["{ 空白を挟む } のは差し込みでない。"]
         );
     }
 
@@ -336,11 +523,11 @@ mod tests {
                 "a.go",
                 "// 説明だ。\nvar x = \"値だ。\"\nvar y = `生の値だ。`\n"
             ),
-            ["説明だ。", "\"値だ。\"", "`生の値だ。`"]
+            ["説明だ。", "値だ。", "生の値だ。"]
         );
         assert_eq!(
             texts("a.py", "# 説明だ。\ns = \"値だ。\"\n"),
-            ["説明だ。", "\"値だ。\""]
+            ["説明だ。", "値だ。"]
         );
     }
 
