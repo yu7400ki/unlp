@@ -4,12 +4,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 use unlp::extract::{self, STDIN_NAME};
-use unlp::input;
 use unlp::morph::Analyzer;
 use unlp::score::{DEFAULT_FLOOR, DocumentScore, Report, Score, ScoreMode, Total};
-use unlp::{Document, Finding, Layer, rule};
+use unlp::{Document, Finding, Layer, git, input, rule};
 
 /// 日本語の文章に残る AI の癖を検出して採点する。
 #[derive(Parser)]
@@ -27,6 +26,14 @@ enum Command {
     Check {
         #[arg(required = true)]
         paths: Vec<PathBuf>,
+    },
+    /// コミットメッセージを検査する
+    Commits {
+        /// 直近の件数
+        #[arg(short = 'n', value_name = "N", value_parser = value_parser!(u32).range(1..), conflicts_with = "range")]
+        number: Option<u32>,
+        /// コミットの範囲
+        range: Option<String>,
     },
     /// 標準入力を 1 つの文書として検査する
     Stdin {
@@ -86,6 +93,7 @@ fn run() -> Result<bool> {
             return Ok(false);
         }
         Command::Check { paths } => check(paths)?,
+        Command::Commits { number, range } => git::commit_documents(&commit_range(*number, range))?,
         Command::Stdin { format } => {
             let text = read_stdin()?;
             let document = format.document(STDIN_NAME.to_string(), &text);
@@ -148,6 +156,14 @@ fn check(paths: &[PathBuf]) -> Result<Vec<Document>> {
         }
     }
     Ok(documents)
+}
+
+/// 範囲を指定しなければ直近の件数で、件数も指定しなければ直近の 1 件を対象にする。
+fn commit_range(number: Option<u32>, range: &Option<String>) -> git::CommitRange {
+    match range {
+        Some(range) => git::CommitRange::Spec(range.clone()),
+        None => git::CommitRange::Last(number.unwrap_or(1)),
+    }
 }
 
 fn read_stdin() -> Result<String> {
