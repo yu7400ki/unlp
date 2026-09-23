@@ -1,3 +1,4 @@
+pub mod bench;
 pub mod document;
 pub mod extract;
 pub mod git;
