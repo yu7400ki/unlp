@@ -146,8 +146,8 @@ fn several_rules_count_their_findings_on_one_input() {
         .as_object()
         .unwrap();
     let rules: Vec<&str> = by_rule.keys().map(String::as_str).collect();
-    assert_eq!(rules, ["F01", "F02", "F03", "L03", "S02", "S03", "S04"]);
-    assert_eq!(report["total"]["by_rule"]["F03"], 1);
+    assert_eq!(rules, ["F01", "F02", "L03", "S02", "S03", "S04"]);
+    assert_eq!(report["total"]["by_rule"]["F02"], 1);
 }
 
 #[test]
@@ -265,14 +265,14 @@ fn the_contents_of_code_are_not_counted() {
 #[test]
 fn a_numbered_item_is_scored_without_its_marker() {
     let report = check_markdown("1. **結論です。**\n2. 次の項目だ。\n");
-    assert_eq!(report["documents"][0]["score"]["by_rule"]["F02"], 1);
+    assert_eq!(report["documents"][0]["score"]["by_rule"]["F01"], 1);
     let findings = report["documents"][0]["score"]["findings"]
         .as_array()
         .unwrap();
     assert!(
         findings
             .iter()
-            .any(|finding| finding["rule"] == "F02" && finding["excerpt"] == "**結論です。**"),
+            .any(|finding| finding["rule"] == "F01" && finding["excerpt"] == "**結論です。**"),
         "{findings:?}"
     );
 }
@@ -286,13 +286,13 @@ fn the_bold_of_a_definition_item_and_of_a_code_span_is_not_counted() {
         "これは **重要な** 点だ。\n\n",
         "**結論です。**理由を書く。\n",
     ));
-    assert_eq!(report["total"]["by_rule"]["F03"], 2);
-    assert_eq!(report["total"]["by_rule"]["F02"], 1);
+    assert_eq!(report["total"]["by_rule"]["F02"], 2);
+    assert_eq!(report["total"]["by_rule"]["F01"], 1);
     let bold: Vec<&str> = report["documents"][0]["score"]["findings"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|finding| finding["rule"] == "F03")
+        .filter(|finding| finding["rule"] == "F02")
         .map(|finding| finding["excerpt"].as_str().unwrap())
         .collect();
     assert_eq!(bold, ["**重要な**", "**結論です。**"]);
@@ -473,17 +473,16 @@ fn a_document_of_wago_predicates_is_a_finding() {
 }
 
 #[test]
-fn a_polite_document_counts_the_colloquialisms_and_the_hedges() {
+fn a_polite_document_counts_the_colloquialisms() {
     let report = json(unlp().args(["stdin", "--json"]).write_stdin(
         "ちょっと直します。やつを消してしまいました。壊れるかもしれません。直るはずです。",
     ));
     let by_rule = &report["total"]["by_rule"];
     assert_eq!(by_rule["R01"], 3, "{by_rule}");
-    assert_eq!(by_rule["D03"], 2, "{by_rule}");
 }
 
 #[test]
-fn a_plain_document_leaves_the_colloquialisms_and_the_hedges_alone() {
+fn a_plain_document_leaves_the_colloquialisms_alone() {
     let report = json(
         unlp()
             .args(["stdin", "--json"])
@@ -495,7 +494,6 @@ fn a_plain_document_leaves_the_colloquialisms_and_the_hedges_alone() {
         0.0
     );
     assert!(by_rule["R01"].is_null(), "{by_rule}");
-    assert!(by_rule["D03"].is_null(), "{by_rule}");
 }
 
 #[test]

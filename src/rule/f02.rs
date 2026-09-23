@@ -1,19 +1,15 @@
-use std::ops::{Range, RangeInclusive};
+use std::ops::Range;
 
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
-use crate::sentence::{self, BOLD, Sentence};
-use crate::token::Pos1;
+use crate::sentence::{self, Sentence};
 
 const ID: RuleId = RuleId::new(Layer::Formulaic, 2);
-const HINT: &str = "太字で結論を先出ししない。文の順序で示す";
+const HINT: &str = "本文の太字は外す。強調は語の選択と文の位置で行う";
 
-/// 結論として数える太字の内側の文字数。
-const INNER: RangeInclusive<usize> = 2..=30;
+/// 本文の太字。
+pub struct BoldInProse;
 
-/// 冒頭の太字の結論。
-pub struct BoldConclusion;
-
-impl SentenceRule for BoldConclusion {
+impl SentenceRule for BoldInProse {
     fn id(&self) -> RuleId {
         ID
     }
@@ -22,34 +18,39 @@ impl SentenceRule for BoldConclusion {
         "F02"
     }
 
-    /// 文頭の太字が短く言い切っている箇所。
+    /// 太字で囲んだ箇所。定義の列の見出し（文頭の太字に続くコロン）、見出しの代わりに
+    /// 置いた太字だけの一区切り、中身が記法だけの太字は数えない。
     fn check(&self, sentence: &Sentence, _context: &Context) -> Vec<Finding> {
+        if stands_for_a_heading(sentence) {
+            return Vec::new();
+        }
         let text = sentence.text();
-        let range = sentence::bold(text)
+        let ranges = sentence::bold(text)
             .into_iter()
-            .next()
-            .filter(|range| range.start == 0)
-            .filter(|range| {
-                let inner = sentence::inside_bold(text, range);
-                INNER.contains(&inner.chars().count()) && concludes(sentence, range)
-            });
-        surface::findings_at(ID, sentence, range.into_iter().collect(), HINT)
+            .filter(|range| !heads_a_definition(text, range))
+            .filter(|range| !sentence::inside_bold(text, range).trim().is_empty())
+            .collect();
+        surface::findings_at(ID, sentence, ranges, HINT)
     }
 }
 
-/// 太字の内側が文として終わるか。句点で閉じるか、末尾の Token が助動詞であるもの。
-fn concludes(sentence: &Sentence, bold: &Range<usize>) -> bool {
-    let text = sentence.text();
-    let inner = sentence::inside_bold(text, bold);
-    if inner.ends_with('。') {
-        return true;
-    }
-    let end = bold.end - BOLD.len();
-    sentence
-        .tokens()
-        .iter()
-        .rfind(|token| token.byte_range.end <= end)
-        .is_some_and(|token| token.pos.pos1 == Pos1::AuxVerb)
+/// 文の属する一区切りが、句点で終わらない太字 1 つだけでできているか。
+fn stands_for_a_heading(sentence: &Sentence) -> bool {
+    let text = sentence.segment().text.trim();
+    matches!(sentence::bold(text).as_slice(), [range]
+        if *range == (0..text.len())
+            && !sentence::inside_bold(text, range)
+                .trim_end()
+                .ends_with(sentence::TERMINATORS))
+}
+
+/// 文頭の太字が定義の見出しか。コロンは太字の直後にも内側の末尾にも置かれる。
+fn heads_a_definition(text: &str, bold: &Range<usize>) -> bool {
+    bold.start == 0
+        && (text[bold.end..].starts_with([':', '：'])
+            || sentence::inside_bold(text, bold)
+                .trim_end()
+                .ends_with([':', '：']))
 }
 
 #[cfg(test)]
@@ -58,54 +59,72 @@ mod tests {
     use crate::rule::harness;
 
     fn excerpts(text: &str) -> Vec<String> {
-        harness::excerpts(&BoldConclusion, text)
+        harness::excerpts(&BoldInProse, text)
     }
 
     #[test]
-    fn a_bold_conclusion_at_the_head_is_a_finding() {
+    fn a_bold_range_is_a_finding() {
+        assert_eq!(excerpts("本文の**強調**だ。"), ["**強調**"]);
+        assert_eq!(
+            excerpts("**一つ**と**二つ**を挙げる。"),
+            ["**一つ**", "**二つ**"]
+        );
+    }
+
+    #[test]
+    fn the_bold_of_a_conclusion_is_also_counted() {
         assert_eq!(
             excerpts("**意図したものです。**エラーが出る。"),
             ["**意図したものです。**"]
         );
-        assert_eq!(excerpts("**直します**。次に進む。"), ["**直します**"]);
-        assert_eq!(excerpts("**直りません**。"), ["**直りません**"]);
-        assert_eq!(excerpts("**そうでした**。"), ["**そうでした**"]);
-        assert_eq!(excerpts("**直しました**"), ["**直しました**"]);
-        assert_eq!(excerpts("**直した**。"), ["**直した**"]);
     }
 
     #[test]
-    fn a_plain_conclusion_at_the_head_is_a_finding() {
+    fn a_sentence_without_bold_is_not_a_finding() {
+        assert!(excerpts("強調を外した文だ。").is_empty());
+        assert!(excerpts("**閉じない文だ。").is_empty());
+    }
+
+    #[test]
+    fn a_bold_heading_before_a_colon_is_not_a_finding() {
+        assert!(excerpts("**ブランチの作成**: 作業ごとに切る。").is_empty());
+        assert!(excerpts("**注意**：値を変える。").is_empty());
+        assert!(excerpts("**注意:** 値を変える。").is_empty());
+        assert!(excerpts("**注意：** 値を変える。").is_empty());
         assert_eq!(
-            excerpts("**これは意図した挙動だ。**"),
-            ["**これは意図した挙動だ。**"]
+            excerpts("値は **重要**: だと書く。"),
+            ["**重要**"],
+            "文頭でない太字はコロンが続いても数える"
         );
-        assert_eq!(excerpts("**必要である。**"), ["**必要である。**"]);
     }
 
     #[test]
-    fn a_bold_inside_the_sentence_is_not_a_finding() {
-        assert!(excerpts("結論は**意図したものです**。").is_empty());
+    fn a_segment_of_a_bold_heading_alone_is_not_a_finding() {
+        assert!(excerpts("**参考文献**").is_empty());
+        assert!(excerpts(" **参考文献** ").is_empty());
     }
 
     #[test]
-    fn a_bold_without_a_conclusion_is_not_a_finding() {
-        assert!(excerpts("**名詞の列挙**だ。").is_empty());
-        assert!(excerpts("**注意**").is_empty());
-        assert!(excerpts("**重要な点**").is_empty());
+    fn a_segment_of_a_bold_sentence_alone_is_a_finding() {
+        assert_eq!(excerpts("**結論です。**"), ["**結論です。**"]);
+        assert_eq!(excerpts("**本当か？**"), ["**本当か？**"]);
     }
 
     #[test]
-    fn the_inner_text_stays_between_two_and_thirty_chars() {
-        assert_eq!(
-            excerpts(&format!("**{}です**。", "あ".repeat(28))),
-            [format!("**{}です**", "あ".repeat(28))]
-        );
-        assert!(excerpts(&format!("**{}です**。", "あ".repeat(29))).is_empty());
+    fn a_bold_with_other_text_in_the_segment_is_a_finding() {
+        assert_eq!(excerpts("**注意** この設定は無効です。"), ["**注意**"]);
+        assert_eq!(excerpts("**参考文献**\n本文を読む。"), ["**参考文献**"]);
+        assert_eq!(excerpts("**甲** と **乙**"), ["**甲**", "**乙**"]);
     }
 
     #[test]
-    fn a_marker_without_its_pair_is_not_a_finding() {
-        assert!(excerpts("**意図したものです。").is_empty());
+    fn a_bold_around_a_blanked_code_span_is_not_a_finding() {
+        assert!(excerpts("オプションは **      ** を渡す。").is_empty());
+    }
+
+    #[test]
+    fn a_marker_in_a_code_span_is_not_a_finding() {
+        assert!(excerpts("`/**` と `/**` の扱いを決める。").is_empty());
+        assert!(excerpts("計算は `2**8` と `2**16` で行う。").is_empty());
     }
 }

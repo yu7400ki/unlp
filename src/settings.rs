@@ -14,7 +14,7 @@ const FILE_NAME: &str = "unlp.toml";
 
 const WEIGHTS: &str = include_str!("../data/weights.toml");
 
-const LISTS: [(RuleId, &str); 9] = [
+const LISTS: [(RuleId, &str); 8] = [
     (
         RuleId::new(Layer::Structure, 1),
         include_str!("../data/lists/S01.toml"),
@@ -44,12 +44,8 @@ const LISTS: [(RuleId, &str); 9] = [
         include_str!("../data/lists/R02.toml"),
     ),
     (
-        RuleId::new(Layer::Formulaic, 1),
-        include_str!("../data/lists/F01.toml"),
-    ),
-    (
-        RuleId::new(Layer::Formulaic, 5),
-        include_str!("../data/lists/F05.toml"),
+        RuleId::new(Layer::Formulaic, 4),
+        include_str!("../data/lists/F04.toml"),
     ),
 ];
 
@@ -349,7 +345,7 @@ mod tests {
     #[test]
     fn the_defaults_weigh_every_registered_rule() {
         let settings = Settings::default();
-        assert_eq!(settings.weights().len(), 22);
+        assert_eq!(settings.weights().len(), 20);
         for (rule, _) in registered() {
             assert!(settings.weights().contains_key(&rule), "{rule}");
         }
