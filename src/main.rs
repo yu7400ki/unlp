@@ -230,11 +230,12 @@ fn check(paths: &[PathBuf]) -> Result<Vec<Document>> {
     Ok(documents)
 }
 
-/// 範囲を指定しなければ索引に載せた変更を対象にする。
+/// 範囲を指定したときだけその範囲を対象にし、`--staged` と指定の無い呼び出しは索引に載せた
+/// 変更を対象にする。
 fn diff_face(staged: bool, range: &Option<String>) -> git::Diff {
-    match range {
-        Some(range) if !staged => git::Diff::Range(range.clone()),
-        _ => git::Diff::Staged,
+    match (staged, range) {
+        (false, Some(range)) => git::Diff::Range(range.clone()),
+        (true, _) | (false, None) => git::Diff::Staged,
     }
 }
 
