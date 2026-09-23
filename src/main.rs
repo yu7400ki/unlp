@@ -327,7 +327,7 @@ fn bench(manifest: &Path, settings: &Settings, json: bool) -> Result<bool> {
     } else {
         print_bench(&report);
     }
-    Ok(false)
+    Ok(!report.met())
 }
 
 /// 集合の文書。パスは `check` と同じ経路で読み、コミットは保存した `git log` の出力から読む。
@@ -386,11 +386,21 @@ fn print_findings(findings: &[Finding]) {
 /// 正規化した点を持たない集合の点の欄。
 const BELOW_FLOOR: &str = "下限未満";
 
-/// 集合ごとの点と層の小計、規則ごとの 1000 字あたりの件数を表にする。
+/// 集合ごとの点と層の小計、規則ごとの 1000 字あたりの件数、受け入れ基準の判定を出力する。
 fn print_bench(report: &bench::BenchReport) {
     print_table(&point_rows(report.sets()));
     println!();
     print_table(&rate_rows(report.sets()));
+    println!();
+    if report.met() {
+        println!("受け入れ基準を満たす");
+        return;
+    }
+    println!("受け入れ基準を満たさない");
+    for set in report.violations() {
+        let point = set.point().expect("基準を外れた集合は点を持つ");
+        println!("  {}  {}  {point:.1} 点", set.name(), set.side().name());
+    }
 }
 
 /// 集合ごとの側、文字数、文数、点、層の小計。

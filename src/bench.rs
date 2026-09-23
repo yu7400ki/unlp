@@ -8,6 +8,12 @@ use thiserror::Error;
 use crate::rule::{RuleId, registered};
 use crate::score::{ScoreMode, Total};
 
+/// 人間側の集合が超えない、1000 字あたりの点。
+const HUMAN_MAX: f64 = 5.0;
+
+/// Claude 側の集合が下回らない、1000 字あたりの点。
+const CLAUDE_MIN: f64 = 6.0;
+
 /// 較正の集合の書き手。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -136,6 +142,16 @@ impl Manifest {
     }
 }
 
+/// 集合が受け入れ基準を満たすか。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Verdict {
+    Met,
+    Violated,
+    /// 日本語の文字数が下限未満で正規化した点を持たず、判定の対象にならない。
+    BelowFloor,
+}
+
 /// 集合 1 つの採点結果。
 #[derive(Debug, Clone, Serialize)]
 pub struct SetScore {
@@ -144,12 +160,14 @@ pub struct SetScore {
     total: Total,
     /// 規則ごとの 1000 字あたりの件数。一覧にあるすべての規則を持つ。
     by_rule_per_1000: BTreeMap<RuleId, f64>,
+    verdict: Verdict,
 }
 
-/// 較正の全体の結果。
+/// 較正の全体の結果。基準を外れた集合が 1 つも無ければ受け入れ基準を満たす。
 #[derive(Debug, Clone, Serialize)]
 pub struct BenchReport {
     sets: Vec<SetScore>,
+    met: bool,
 }
 
 impl SetScore {
@@ -159,8 +177,13 @@ impl SetScore {
             name: set.name.clone(),
             side: set.side,
             by_rule_per_1000: per_1000(&total),
+            verdict: verdict(set.side, total.mode()),
             total,
         }
+    }
+
+    pub fn verdict(&self) -> Verdict {
+        self.verdict
     }
 
     pub fn name(&self) -> &str {
@@ -190,12 +213,37 @@ impl SetScore {
 
 impl BenchReport {
     pub fn new(sets: Vec<SetScore>) -> Self {
-        Self { sets }
+        let met = !sets.iter().any(|set| set.verdict() == Verdict::Violated);
+        Self { sets, met }
     }
 
     pub fn sets(&self) -> &[SetScore] {
         &self.sets
     }
+
+    /// 受け入れ基準を満たすか。
+    pub fn met(&self) -> bool {
+        self.met
+    }
+
+    /// 基準を外れた集合。
+    pub fn violations(&self) -> impl Iterator<Item = &SetScore> {
+        self.sets
+            .iter()
+            .filter(|set| set.verdict() == Verdict::Violated)
+    }
+}
+
+/// 側ごとの基準に照らした判定。正規化した点を持たない集合は判定しない。
+fn verdict(side: Side, mode: &ScoreMode) -> Verdict {
+    let ScoreMode::Normalized { per_1000, .. } = mode else {
+        return Verdict::BelowFloor;
+    };
+    let met = match side {
+        Side::Human => *per_1000 <= HUMAN_MAX,
+        Side::Claude => *per_1000 >= CLAUDE_MIN,
+    };
+    if met { Verdict::Met } else { Verdict::Violated }
 }
 
 /// 一覧にあるすべての規則の、1000 字あたりの件数。
@@ -215,9 +263,22 @@ fn per_1000(total: &Total) -> BTreeMap<RuleId, f64> {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
     use tempfile::TempDir;
 
     use super::*;
+    use crate::document::{LineRange, Origin, Segment, SegmentKind};
+    use crate::measure::Measures;
+    use crate::rule::{Finding, Layer};
+    use crate::score::Score;
+    use crate::sentence::split_sentences;
+    use crate::settings::Settings;
+
+    /// 正規化した点で採点する日本語文字数の下限。
+    fn floor() -> usize {
+        Settings::default().floor()
+    }
 
     /// 一覧のファイルを置いた一時ディレクトリ。
     fn dir_with(manifest: &str) -> TempDir {
@@ -329,6 +390,107 @@ mod tests {
             assert!(matches!(error, Error::Parse { .. }), "{manifest}: {error}");
             assert!(error.to_string().contains("manifest.toml"), "{error}");
         }
+    }
+
+    /// 集合の名前と側だけを持つ集合。
+    fn set(side: Side) -> Set {
+        Set {
+            name: "a".to_string(),
+            side,
+            source: Source::Paths(Vec::new()),
+        }
+    }
+
+    /// S01 の指摘 1 件を数え、その重みを点にした 1000 字の集計。
+    fn total(point: f64) -> Total {
+        total_of(1000, point)
+    }
+
+    /// 日本語文字数と S01 の重みを指定した集計。
+    fn total_of(ja_chars: usize, weight: f64) -> Total {
+        let rule = RuleId::new(Layer::Structure, 1);
+        let origin = Origin {
+            path: "t".to_string(),
+            lines: LineRange::new(NonZeroU32::MIN, NonZeroU32::MIN).unwrap(),
+            commit: None,
+        };
+        let segment = Segment {
+            text: "あ".repeat(ja_chars),
+            origin: origin.clone(),
+            kind: SegmentKind::Prose,
+        };
+        Score::new(
+            &split_sentences(&segment),
+            vec![Finding::new(rule, origin, "x".to_string(), "h")],
+            Measures::default(),
+            floor(),
+            &BTreeMap::from([(rule, weight)]),
+        )
+        .total()
+    }
+
+    #[test]
+    fn the_human_side_meets_the_criteria_up_to_five_points() {
+        assert_eq!(
+            SetScore::new(&set(Side::Human), total(HUMAN_MAX)).verdict(),
+            Verdict::Met
+        );
+        assert_eq!(
+            SetScore::new(&set(Side::Human), total(HUMAN_MAX + 0.1)).verdict(),
+            Verdict::Violated
+        );
+    }
+
+    #[test]
+    fn the_claude_side_meets_the_criteria_from_six_points() {
+        assert_eq!(
+            SetScore::new(&set(Side::Claude), total(CLAUDE_MIN)).verdict(),
+            Verdict::Met
+        );
+        assert_eq!(
+            SetScore::new(&set(Side::Claude), total(CLAUDE_MIN - 0.1)).verdict(),
+            Verdict::Violated
+        );
+    }
+
+    #[test]
+    fn a_set_below_the_floor_has_no_point_and_no_judgment() {
+        for side in [Side::Human, Side::Claude] {
+            let score = SetScore::new(&set(side), total_of(floor() - 1, 100.0));
+            assert_eq!(score.verdict(), Verdict::BelowFloor);
+            assert_eq!(score.point(), None);
+        }
+    }
+
+    #[test]
+    fn the_rates_cover_every_rule() {
+        let score = SetScore::new(&set(Side::Human), total(1.0));
+        assert_eq!(score.point(), Some(1.0));
+        assert_eq!(score.by_rule_per_1000().len(), registered().len());
+        assert_eq!(
+            score.by_rule_per_1000()[&RuleId::new(Layer::Structure, 1)],
+            1.0
+        );
+        assert_eq!(score.by_rule_per_1000()[&RuleId::new(Layer::Goshu, 1)], 0.0);
+    }
+
+    #[test]
+    fn one_set_outside_the_criteria_fails_the_whole_bench() {
+        let met = BenchReport::new(vec![
+            SetScore::new(&set(Side::Human), total(1.0)),
+            SetScore::new(&set(Side::Claude), total(20.0)),
+            SetScore::new(&set(Side::Claude), total_of(floor() - 1, 100.0)),
+        ]);
+        assert!(met.met());
+        assert_eq!(met.violations().count(), 0);
+
+        let violated = BenchReport::new(vec![
+            SetScore::new(&set(Side::Human), total(1.0)),
+            SetScore::new(&set(Side::Claude), total(1.0)),
+        ]);
+        assert!(!violated.met());
+        assert_eq!(violated.violations().count(), 1);
+        assert_eq!(violated.violations().next().unwrap().point(), Some(1.0));
     }
 
     #[test]
