@@ -310,6 +310,24 @@ mod tests {
     use super::*;
     use crate::settings::Settings;
 
+    /// 規則集が節ごとに 1 行で書く既定の重み。
+    const WEIGHT: &str = "既定の重み: ";
+
+    /// anchor の節に書かれた既定の重み。行が無ければ空、複数あればその全部。
+    fn doc_weights(anchor: &str) -> Vec<f64> {
+        RULES
+            .split("\n## ")
+            .filter(|section| {
+                section
+                    .strip_prefix(anchor)
+                    .is_some_and(|rest| rest.starts_with(' '))
+            })
+            .flat_map(|section| section.lines())
+            .filter_map(|line| line.strip_prefix(WEIGHT))
+            .map(|weight| weight.parse().expect("既定の重みは数で書く"))
+            .collect()
+    }
+
     #[test]
     fn a_rule_id_is_read_back_from_its_text() {
         assert_eq!(
@@ -331,6 +349,19 @@ mod tests {
             assert!(
                 doc_heading(anchor).is_some_and(|heading| !heading.is_empty()),
                 "{rule} の anchor {anchor} に対応する見出しが無い"
+            );
+        }
+    }
+
+    #[test]
+    fn every_rule_repeats_its_default_weight_in_the_rule_book() {
+        let weights = Settings::default().weights().clone();
+        for (rule, anchor) in registered() {
+            let weight: Vec<f64> = weights.get(&rule).copied().into_iter().collect();
+            assert_eq!(
+                doc_weights(anchor),
+                weight,
+                "{rule} の節の既定の重みが設定と食い違う"
             );
         }
     }
