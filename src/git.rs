@@ -59,17 +59,22 @@ pub enum CommitRange {
 }
 
 impl CommitRange {
-    fn spec(&self) -> String {
+    /// 対象のコミットを選ぶ `git log` の引数。両端を持たない指定はそのコミット 1 件にする。
+    fn args(&self) -> Vec<String> {
         match self {
-            Self::Last(count) => format!("HEAD~{count}..HEAD"),
-            Self::Spec(spec) => spec.clone(),
+            Self::Last(count) => vec!["-n".to_string(), count.to_string()],
+            Self::Spec(spec) if spec.contains("..") => vec![spec.clone()],
+            Self::Spec(rev) => vec!["-n".to_string(), "1".to_string(), rev.clone()],
         }
     }
 }
 
 /// 範囲のコミットを 1 件 1 文書として読み込む。日本語を含まないコミットは文書にしない。
 pub fn commit_documents(range: &CommitRange) -> Result<Vec<Document>> {
-    let output = text(&["log", "--format=%H%x00%B%x00", &range.spec()])?;
+    let mut args = vec!["log".to_string(), "--format=%H%x00%B%x00".to_string()];
+    args.extend(range.args());
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = text(&args)?;
     let mut documents = Vec::new();
     for (hash, message) in log_records(&output) {
         let segments = message_segments(message, COMMIT_PATH, Some(hash));
@@ -524,6 +529,19 @@ mod tests {
             .into_iter()
             .map(|segment| segment.text)
             .collect()
+    }
+
+    #[test]
+    fn the_range_chooses_the_commits_of_the_log() {
+        assert_eq!(CommitRange::Last(3).args(), ["-n", "3"]);
+        assert_eq!(
+            CommitRange::Spec("HEAD~2..HEAD".to_string()).args(),
+            ["HEAD~2..HEAD"]
+        );
+        assert_eq!(
+            CommitRange::Spec("HEAD~2".to_string()).args(),
+            ["-n", "1", "HEAD~2"]
+        );
     }
 
     #[test]

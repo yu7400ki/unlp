@@ -239,7 +239,7 @@ fn commits_take_a_range_and_default_to_the_last_one() {
     let repo = Repo::new();
     repo.write("a.txt", "初めの文だ。\n");
     repo.git(&["add", "."]);
-    repo.commit("chore: init\n");
+    repo.commit("chore: 土台を置く\n");
     repo.write("b.txt", "次の文だ。\n");
     repo.git(&["add", "."]);
     repo.commit("feat: 機能を追加する\n");
@@ -251,22 +251,51 @@ fn commits_take_a_range_and_default_to_the_last_one() {
     assert_eq!(names(&report).len(), 1, "{report}");
     assert!(names(&report)[0].contains("機能を追加する"), "{report}");
 
+    let report = json(repo.unlp().args(["commits", "HEAD~1", "--json"]));
+    assert_eq!(names(&report).len(), 1, "{report}");
+    assert!(names(&report)[0].contains("機能を追加する"), "{report}");
+
     let report = json(repo.unlp().args(["commits", "--json"]));
     assert_eq!(report["documents"].as_array().unwrap().len(), 0, "{report}");
 }
 
 #[test]
-fn commits_beyond_the_first_one_are_an_error_of_git() {
+fn the_only_commit_of_a_repository_is_scored() {
     let repo = Repo::new();
     repo.write("a.txt", "初めの文だ。\n");
     repo.git(&["add", "."]);
-    repo.commit("chore: init\n");
+    repo.commit("feat: 機能を追加する\n");
 
-    repo.unlp()
-        .args(["commits", "-n", "99"])
-        .assert()
-        .code(2)
-        .stderr(contains("HEAD~99..HEAD"));
+    for args in [
+        ["commits", "--json"].as_slice(),
+        ["commits", "-n", "99", "--json"].as_slice(),
+    ] {
+        let report = json(repo.unlp().args(args));
+        assert_eq!(names(&report).len(), 1, "{args:?}  {report}");
+        assert!(names(&report)[0].contains("機能を追加する"), "{report}");
+    }
+}
+
+#[test]
+fn a_merge_does_not_change_the_number_of_the_last_commits() {
+    let repo = Repo::new();
+    repo.write("a.txt", "初めの文だ。\n");
+    repo.git(&["add", "."]);
+    repo.commit("chore: 土台を置く\n");
+    repo.write("b.txt", "幹の文だ。\n");
+    repo.git(&["add", "."]);
+    repo.commit("feat: 幹を進める\n");
+    repo.git(&["checkout", "-q", "-b", "topic", "HEAD~1"]);
+    repo.write("c.txt", "支流の文だ。\n");
+    repo.git(&["add", "."]);
+    repo.commit("feat: 支流を進める\n");
+    repo.git(&["checkout", "-q", "main"]);
+    repo.git(&["merge", "-q", "--no-ff", "--no-commit", "topic"]);
+    repo.commit("chore: 支流を合わせる\n");
+
+    let report = json(repo.unlp().args(["commits", "-n", "2", "--json"]));
+    assert_eq!(names(&report).len(), 2, "{report}");
+    assert!(names(&report)[0].contains("支流を合わせる"), "{report}");
 }
 
 #[test]
