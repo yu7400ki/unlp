@@ -1603,6 +1603,7 @@ dependencies = [
  "ast-grep-core",
  "ast-grep-language",
  "clap",
+ "globset",
  "lindera",
  "predicates",
  "pulldown-cmark",

@@ -559,3 +559,12 @@ fn the_threshold_in_the_config_decides_the_hook() {
         .success()
         .stdout(contains("正規化 19.4 点"));
 }
+
+#[test]
+fn the_excluded_paths_are_not_in_the_staged_diff() {
+    let repo = repo_with_staged_change();
+    repo.write("unlp.toml", "exclude = [\"src/**\"]\n");
+
+    let report = json(repo.unlp().args(["diff", "--staged", "--json"]));
+    assert_eq!(names(&report), ["doc.md", SPACED_PATH], "{report}");
+}

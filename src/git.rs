@@ -127,6 +127,13 @@ pub struct Diffed {
     pub unreadable: Vec<(String, String)>,
 }
 
+/// 作業ツリーの根。差分が示すパスはここからの相対パスになる。
+pub fn toplevel() -> Result<PathBuf> {
+    Ok(PathBuf::from(
+        text(&["rev-parse", "--show-toplevel"])?.trim(),
+    ))
+}
+
 /// 差分が追加・変更した行に触れる Segment だけを持つ、ファイルごとの文書。索引または範囲の
 /// 右端のリビジョンにあるファイル全体を抽出し、触れていない Segment を落とす。抽出の書式を
 /// 定めていない種類は黙って飛ばす。作業ツリーは参照しない。

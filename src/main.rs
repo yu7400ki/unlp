@@ -144,8 +144,8 @@ fn run() -> Result<bool> {
             print_rules(&settings);
             return Ok(false);
         }
-        Command::Check { paths } => check(paths)?,
-        Command::Diff { face } => diff(&face.face())?,
+        Command::Check { paths } => check(paths, &settings)?,
+        Command::Diff { face } => diff(&face.face(), &settings)?,
         Command::Commits { number, range } => git::commit_documents(&commit_range(*number, range))?,
         Command::Stdin { format } => {
             let text = read_stdin()?;
@@ -153,7 +153,7 @@ fn run() -> Result<bool> {
             extract::with_japanese(document).into_iter().collect()
         }
         Command::Hook { command } => match command {
-            HookCommand::CommitMsg { file } => commit_msg_documents(file)?,
+            HookCommand::CommitMsg { file } => commit_msg_documents(file, &settings)?,
             HookCommand::Install { force } => return install_hook(*force),
             HookCommand::Uninstall => {
                 if let Some(path) = git::uninstall_hook()? {
@@ -231,8 +231,9 @@ fn install_hook(force: bool) -> Result<bool> {
     }
 }
 
-/// 差分の文書を読む。UTF-8 でないファイルと git が内容を返さないファイルは警告して飛ばす。
-fn diff(face: &git::Diff) -> Result<Vec<Document>> {
+/// 差分の文書を読む。設定が除外するファイルは飛ばす。UTF-8 でないファイルと git が内容を
+/// 返さないファイルは警告して飛ばす。
+fn diff(face: &git::Diff, settings: &Settings) -> Result<Vec<Document>> {
     let diffed = git::diff_documents(face)?;
     for path in &diffed.not_utf8 {
         eprintln!("警告: {path} は UTF-8 で符号化されていない");
@@ -240,25 +241,33 @@ fn diff(face: &git::Diff) -> Result<Vec<Document>> {
     for (path, message) in &diffed.unreadable {
         eprintln!("警告: {path} の内容を読めない: {message}");
     }
-    Ok(diffed.documents)
+    let toplevel = git::toplevel()?;
+    Ok(diffed
+        .documents
+        .into_iter()
+        .filter(|document| !settings.excludes(&toplevel.join(&document.name)))
+        .collect())
 }
 
 /// メッセージのファイルと索引に載せた差分を 1 つの入力にする。
-fn commit_msg_documents(file: &Path) -> Result<Vec<Document>> {
+fn commit_msg_documents(file: &Path, settings: &Settings) -> Result<Vec<Document>> {
     let message =
         fs::read_to_string(file).with_context(|| format!("{} を読み込めない", file.display()))?;
     let mut documents: Vec<Document> = git::message_document(&message).into_iter().collect();
-    documents.extend(diff(&git::Diff::Staged)?);
+    documents.extend(diff(&git::Diff::Staged, settings)?);
     Ok(documents)
 }
 
-/// 対象のパスを展開し、日本語を含むファイルを文書にする。抽出の書式を定めていない種類は、
-/// 明示されたパスなら警告し、走査で見つかったファイルは黙って飛ばす。UTF-8 でないファイルは
-/// 警告して飛ばす。
-fn check(paths: &[PathBuf]) -> Result<Vec<Document>> {
+/// 対象のパスを展開し、日本語を含むファイルを文書にする。設定が除外するファイルは飛ばす。
+/// 抽出の書式を定めていない種類は、明示されたパスなら警告し、走査で見つかったファイルは黙って
+/// 飛ばす。UTF-8 でないファイルは警告して飛ばす。
+fn check(paths: &[PathBuf], settings: &Settings) -> Result<Vec<Document>> {
     let mut documents = Vec::new();
     for path in paths {
         for file in input::collect_files(path)? {
+            if settings.excludes(&file) {
+                continue;
+            }
             let named = file == *path;
             match input::read_document(&file) {
                 Ok(input::Reading::Document(document)) => documents.push(document),

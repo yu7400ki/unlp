@@ -38,6 +38,16 @@ fn dir_with(config: &str, files: &[(&str, &str)]) -> TempDir {
     dir
 }
 
+/// 文書ごとの名前。
+fn names(report: &Value) -> Vec<String> {
+    report["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|document| document["name"].as_str().unwrap().to_string())
+        .collect()
+}
+
 #[test]
 fn an_integer_threshold_and_floor_are_read() {
     let dir = dir_with(
@@ -174,4 +184,26 @@ fn an_unknown_rule_id_or_group_in_the_lists_is_an_error() {
             .stderr(contains(shown))
             .stderr(contains("unlp.toml"));
     }
+}
+
+#[test]
+fn the_excluded_paths_are_not_scored() {
+    let dir = dir_with(
+        "exclude = [\"sub/**\", \"b.txt\"]\n",
+        &[
+            ("a.txt", "残る文だ。"),
+            ("b.txt", "除かれる文だ。"),
+            ("sub/c.txt", "除かれる文だ。"),
+        ],
+    );
+    let report = json(unlp(dir.path()).args(["check", ".", "--json"]));
+    assert_eq!(names(&report), ["./a.txt"], "{report}");
+}
+
+#[test]
+fn an_excluded_path_named_on_the_command_line_is_skipped() {
+    let dir = dir_with("exclude = [\"b.txt\"]\n", &[("b.txt", "除かれる文だ。")]);
+    let report = json(unlp(dir.path()).args(["check", "b.txt", "--json"]));
+    assert!(names(&report).is_empty(), "{report}");
+    assert_eq!(report["total"]["ja_chars"], 0, "{report}");
 }

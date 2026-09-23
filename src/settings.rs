@@ -3,6 +3,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock;
 use std::{fs, io, path, result};
 
+use globset::{GlobBuilder, GlobMatcher};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -105,6 +106,13 @@ pub enum Error {
         rule: RuleId,
         group: String,
     },
+    #[error("{} の {glob} はグロブとして解釈できない", path.display())]
+    BadGlob {
+        path: PathBuf,
+        glob: String,
+        #[source]
+        source: globset::Error,
+    },
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -115,6 +123,8 @@ pub type Result<T> = result::Result<T, Error>;
 struct File {
     threshold: Option<f64>,
     floor: Option<usize>,
+    #[serde(default)]
+    exclude: Vec<String>,
     #[serde(default)]
     weights: BTreeMap<String, f64>,
     #[serde(default)]
@@ -131,13 +141,60 @@ struct Words {
     remove: Vec<String>,
 }
 
-/// 採点の設定。しきい値、下限、規則ごとの重み、規則ごとの語リストを持つ。
+/// 採点の対象から外すパス。設定ファイルのあるディレクトリを根として、そこからの相対パスに
+/// グロブを照合する。
+#[derive(Debug, Clone, Default)]
+struct Exclude {
+    root: PathBuf,
+    globs: Vec<GlobMatcher>,
+}
+
+impl Exclude {
+    /// 設定ファイルの `exclude` からグロブを組む。`*` は区切りをまたがず、`**` はまたぐ。
+    fn new(path: &Path, globs: &[String]) -> Result<Self> {
+        let globs = globs
+            .iter()
+            .map(|glob| {
+                GlobBuilder::new(glob)
+                    .literal_separator(true)
+                    .build()
+                    .map(|built| built.compile_matcher())
+                    .map_err(|source| Error::BadGlob {
+                        path: path.to_path_buf(),
+                        glob: glob.clone(),
+                        source,
+                    })
+            })
+            .collect::<Result<Vec<GlobMatcher>>>()?;
+        Ok(Self {
+            root: path.parent().unwrap_or(path).to_path_buf(),
+            globs,
+        })
+    }
+
+    /// 根の下にあり、グロブのいずれかに一致するパスか。
+    fn matches(&self, path: &Path) -> bool {
+        if self.globs.is_empty() {
+            return false;
+        }
+        let Ok(absolute) = absolute(path) else {
+            return false;
+        };
+        let Ok(relative) = absolute.strip_prefix(&self.root) else {
+            return false;
+        };
+        self.globs.iter().any(|glob| glob.is_match(relative))
+    }
+}
+
+/// 採点の設定。しきい値、下限、規則ごとの重み、規則ごとの語リスト、除外するパスを持つ。
 #[derive(Debug, Clone)]
 pub struct Settings {
     threshold: f64,
     floor: usize,
     weights: BTreeMap<RuleId, f64>,
     lists: BTreeMap<RuleId, WordList>,
+    exclude: Exclude,
 }
 
 impl Default for Settings {
@@ -148,6 +205,7 @@ impl Default for Settings {
             floor: FLOOR,
             weights: DEFAULT_WEIGHTS.clone(),
             lists: DEFAULT_LISTS.clone(),
+            exclude: Exclude::default(),
         }
     }
 }
@@ -181,6 +239,7 @@ impl Settings {
         if let Some(floor) = file.floor {
             self.floor = floor;
         }
+        self.exclude = Exclude::new(path, &file.exclude)?;
         for (key, weight) in file.weights {
             self.weights.insert(rule_id(&key, path)?, weight);
         }
@@ -221,6 +280,11 @@ impl Settings {
     /// 規則 ID ごとの、規則が照合する語。
     pub fn lists(&self) -> &BTreeMap<RuleId, WordList> {
         &self.lists
+    }
+
+    /// 採点の対象から外すパスか。
+    pub fn excludes(&self, path: &Path) -> bool {
+        self.exclude.matches(path)
     }
 }
 
@@ -428,6 +492,47 @@ mod tests {
         let error = found_in(dir.path()).unwrap_err();
         assert!(matches!(error, Error::UnknownGroup { .. }), "{error}");
         assert!(error.to_string().contains("people"), "{error}");
+    }
+
+    #[test]
+    fn the_globs_are_relative_to_the_directory_of_the_file() {
+        let dir = dir_with("exclude = [\"tests/**\", \"src/a.rs\", \"*.md\"]\n");
+        let settings = found_in(dir.path()).unwrap();
+        for excluded in ["tests/a.rs", "tests/a/b.rs", "src/a.rs", "a.md"] {
+            assert!(settings.excludes(&dir.path().join(excluded)), "{excluded}");
+        }
+        for kept in ["tests", "src/b.rs", "a/b.md", "src/a.rs.bak"] {
+            assert!(!settings.excludes(&dir.path().join(kept)), "{kept}");
+        }
+    }
+
+    #[test]
+    fn a_path_outside_the_root_is_not_excluded() {
+        let dir = dir_with("exclude = [\"**\"]\n");
+        let outside = tempfile::tempdir().unwrap();
+        assert!(
+            !found_in(dir.path())
+                .unwrap()
+                .excludes(&outside.path().join("a.md"))
+        );
+    }
+
+    #[test]
+    fn a_file_without_globs_excludes_nothing() {
+        let dir = dir_with("threshold = 20\n");
+        assert!(
+            !found_in(dir.path())
+                .unwrap()
+                .excludes(&dir.path().join("a.md"))
+        );
+    }
+
+    #[test]
+    fn a_glob_that_cannot_be_read_is_an_error() {
+        let dir = dir_with("exclude = [\"a[\"]\n");
+        let error = found_in(dir.path()).unwrap_err();
+        assert!(matches!(error, Error::BadGlob { .. }), "{error}");
+        assert!(error.to_string().contains("a["), "{error}");
     }
 
     #[test]
