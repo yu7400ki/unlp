@@ -393,6 +393,9 @@ const BELOW_FLOOR: &str = "下限未満";
 /// 日本語の文書を持たない集合の点の欄。
 const EMPTY: &str = "集合が空";
 
+/// 判定の対象から外した集合の表示。
+const REFERENCE: &str = "参考";
+
 /// 集合ごとの点と層の小計、規則ごとの 1000 字あたりの件数、受け入れ基準の判定を出力する。
 fn print_bench(report: &bench::BenchReport) {
     print_table(&point_rows(report.sets()));
@@ -409,8 +412,17 @@ fn print_bench(report: &bench::BenchReport) {
         }
     }
     for set in report.sets() {
-        if set.verdict() == bench::Verdict::Empty {
-            println!("  {EMPTY}  {}", set.name());
+        match set.verdict() {
+            bench::Verdict::Empty => println!("  {EMPTY}  {}", set.name()),
+            bench::Verdict::Reference => {
+                let point = set.point().expect("参考の集合は点を持つ");
+                println!(
+                    "  {REFERENCE}  {}  {}  {point:.2} 点",
+                    set.name(),
+                    set.side().name()
+                );
+            }
+            _ => {}
         }
     }
 }

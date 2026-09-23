@@ -31,9 +31,13 @@ impl SentenceRule for BoldInProse {
     }
 }
 
-/// 文頭の太字にコロンが続くか。
+/// 文頭の太字が定義の見出しか。コロンは太字の直後にも内側の末尾にも置かれる。
 fn heads_a_definition(text: &str, bold: &Range<usize>) -> bool {
-    bold.start == 0 && text[bold.end..].starts_with([':', '：'])
+    bold.start == 0
+        && (text[bold.end..].starts_with([':', '：'])
+            || sentence::inside_bold(text, bold)
+                .trim_end()
+                .ends_with([':', '：']))
 }
 
 #[cfg(test)]
@@ -72,6 +76,8 @@ mod tests {
     fn a_bold_heading_before_a_colon_is_not_a_finding() {
         assert!(excerpts("**ブランチの作成**: 作業ごとに切る。").is_empty());
         assert!(excerpts("**注意**：値を変える。").is_empty());
+        assert!(excerpts("**注意:** 値を変える。").is_empty());
+        assert!(excerpts("**注意：** 値を変える。").is_empty());
         assert_eq!(
             excerpts("値は **重要**: だと書く。"),
             ["**重要**"],

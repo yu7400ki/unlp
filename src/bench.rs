@@ -47,6 +47,8 @@ pub struct Set {
     pub name: String,
     pub side: Side,
     pub source: Source,
+    /// 受け入れ基準の判定に含めるか。含めない集合は点を参考として出すだけになる。
+    pub judge: bool,
 }
 
 /// 較正のコーパスの一覧。
@@ -92,6 +94,7 @@ struct SetFile {
     side: Side,
     paths: Option<Vec<PathBuf>>,
     commits: Option<PathBuf>,
+    judge: Option<bool>,
 }
 
 impl SetFile {
@@ -113,6 +116,7 @@ impl SetFile {
             name: self.name,
             side: self.side,
             source,
+            judge: self.judge.unwrap_or(true),
         })
     }
 }
@@ -152,6 +156,8 @@ pub enum Verdict {
     BelowFloor,
     /// 日本語の文書を 1 つも持たない。
     Empty,
+    /// 一覧で判定の対象から外した参考の集合。
+    Reference,
 }
 
 /// 集合 1 つの採点結果。
@@ -179,7 +185,7 @@ impl SetScore {
             name: set.name.clone(),
             side: set.side,
             by_rule_per_1000: per_1000(&total),
-            verdict: verdict(set.side, &total),
+            verdict: verdict(set, &total),
             total,
         }
     }
@@ -238,14 +244,17 @@ impl BenchReport {
 
 /// 側ごとの基準に照らした判定。日本語の文書を持たない集合と、正規化した点を持たない集合は
 /// 判定しない。
-fn verdict(side: Side, total: &Total) -> Verdict {
+fn verdict(set: &Set, total: &Total) -> Verdict {
     if total.ja_chars() == 0 {
         return Verdict::Empty;
     }
     let ScoreMode::Normalized { per_1000, .. } = total.mode() else {
         return Verdict::BelowFloor;
     };
-    let met = match side {
+    if !set.judge {
+        return Verdict::Reference;
+    }
+    let met = match set.side {
         Side::Human => *per_1000 <= HUMAN_MAX,
         Side::Claude => *per_1000 >= CLAUDE_MIN,
     };
@@ -404,7 +413,18 @@ mod tests {
             name: "a".to_string(),
             side,
             source: Source::Paths(Vec::new()),
+            judge: true,
         }
+    }
+
+    #[test]
+    fn a_set_out_of_the_judgment_is_a_reference() {
+        let set = Set {
+            judge: false,
+            ..set(Side::Claude)
+        };
+        assert_eq!(verdict(&set, &total(1.0)), Verdict::Reference);
+        assert!(BenchReport::new(vec![SetScore::new(&set, total(1.0))]).met());
     }
 
     /// S01 の指摘 1 件を数え、その重みを点にした 1000 字の集計。
