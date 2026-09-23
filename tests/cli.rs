@@ -20,6 +20,20 @@ fn check_markdown(text: &str) -> Value {
     json(unlp().args(["check", "--json"]).arg(dir.path()))
 }
 
+fn check_source(name: &str, text: &str) -> Value {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(name), text).unwrap();
+    json(unlp().args(["check", "--json"]).arg(dir.path()))
+}
+
+/// 期待する Segment の日本語の文字数の合計。
+fn ja_chars<'a>(segments: impl IntoIterator<Item = &'a str>) -> usize {
+    segments
+        .into_iter()
+        .map(|text| text.chars().filter(|c| unlp::is_japanese(*c)).count())
+        .sum()
+}
+
 #[test]
 fn stdin_becomes_one_document_scored_by_ja_chars() {
     let report = json(
@@ -463,4 +477,97 @@ fn the_rule_book_stays_within_the_wago_ratio() {
         score["measures"]["final_wago_ratio"].as_f64().unwrap() < 0.7,
         "{score}"
     );
+}
+
+#[test]
+fn rust_comments_and_strings_are_scored_without_the_code() {
+    let source = concat!(
+        "//! モジュールの説明だ。\n",
+        "\n",
+        "/// 文書を読み込んで\n",
+        "/// 一つの文にする。\n",
+        "// 行のコメントだ。\n",
+        "/* ブロックのコメントだ。 */\n",
+        "fn read(名前: &str) -> String {\n",
+        "    let message = \"エラー: 見つからない。\";\n",
+        "    let raw = r#\"生の文字列だ。\"#;\n",
+        "    format!(\"{message}{raw}\")\n",
+        "}\n",
+    );
+    let report = check_source("a.rs", source);
+    let score = &report["documents"][0]["score"];
+    assert_eq!(
+        score["ja_chars"],
+        ja_chars([
+            "モジュールの説明だ。",
+            "文書を読み込んで一つの文にする。",
+            "行のコメントだ。ブロックのコメントだ。",
+            "エラー: 見つからない。",
+            "生の文字列だ。",
+        ]),
+        "{score}"
+    );
+    assert_eq!(score["sentences"], 6, "{score}");
+}
+
+#[test]
+fn a_placeholder_of_a_string_is_blanked() {
+    let report = check_source("a.rs", "fn f() { format!(\"{名前} を読み込めない\"); }\n");
+    assert_eq!(
+        report["documents"][0]["score"]["ja_chars"],
+        ja_chars(["を読み込めない"])
+    );
+}
+
+#[test]
+fn python_comments_docstrings_and_strings_are_scored() {
+    let source = concat!(
+        "\"\"\"モジュールの説明だ。\"\"\"\n",
+        "\n",
+        "# 行のコメントだ。\n",
+        "def read(名前):\n",
+        "    \"\"\"文書を読み込む。\"\"\"\n",
+        "    message = f\"{名前} を読み込めない\"\n",
+        "    return message\n",
+    );
+    let report = check_source("a.py", source);
+    let score = &report["documents"][0]["score"];
+    assert_eq!(
+        score["ja_chars"],
+        ja_chars([
+            "モジュールの説明だ。",
+            "行のコメントだ。",
+            "文書を読み込む。",
+            "を読み込めない",
+        ]),
+        "{score}"
+    );
+    assert_eq!(score["sentences"], 4, "{score}");
+}
+
+#[test]
+fn a_file_out_of_the_supported_kinds_is_skipped_with_a_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.toml"), "key = \"設定の値だ。\"\n").unwrap();
+    fs::write(dir.path().join("b.txt"), "本文だ。").unwrap();
+
+    let output = unlp()
+        .args(["check", "--json"])
+        .arg(dir.path())
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["documents"].as_array().unwrap().len(), 1);
+    assert!(
+        report["documents"][0]["name"]
+            .as_str()
+            .unwrap()
+            .ends_with("b.txt"),
+        "{report}"
+    );
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("警告"), "{stderr}");
+    assert!(stderr.contains("a.toml"), "{stderr}");
 }
