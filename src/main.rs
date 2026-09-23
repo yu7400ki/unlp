@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, stdin};
 use std::path::{Path, PathBuf};
@@ -457,23 +457,22 @@ fn point_rows(sets: &[bench::SetScore]) -> Vec<Vec<String>> {
 
 /// 集合ごとの規則別の 1000 字あたりの件数。
 fn rate_rows(sets: &[bench::SetScore]) -> Vec<Vec<String>> {
-    let rules: BTreeSet<RuleId> = rule::registered()
-        .into_iter()
-        .map(|(rule, _)| rule)
-        .collect();
     let mut header = vec!["集合".to_string()];
-    header.extend(rules.iter().map(RuleId::to_string));
+    let rules = sets.first().map(bench::SetScore::by_rule_per_1000);
+    header.extend(
+        rules
+            .into_iter()
+            .flat_map(BTreeMap::keys)
+            .map(RuleId::to_string),
+    );
     let mut rows = vec![header];
     for set in sets {
         let mut row = vec![set.name().to_string()];
-        row.extend(rules.iter().map(|rule| {
-            let rate = set
-                .by_rule_per_1000()
-                .get(rule)
-                .copied()
-                .unwrap_or_default();
-            format!("{rate:.1}")
-        }));
+        row.extend(
+            set.by_rule_per_1000()
+                .values()
+                .map(|rate| format!("{rate:.1}")),
+        );
         rows.push(row);
     }
     rows

@@ -94,12 +94,15 @@ mod tests {
 
     #[test]
     fn the_excerpt_lists_the_wago_verbs_in_the_order_of_their_count() {
-        assert_eq!(
-            excerpts(
-                "窓を開ける。設定を比べる。値を比べる。語を比べる。規則を数える。値を数える。\n                 鍵を回す。鍵を回す。鍵を回す。鍵を回す。"
+        let text = format!(
+            "{}{}",
+            concat!(
+                "窓を開ける。設定を比べる。値を比べる。語を比べる。",
+                "規則を数える。値を数える。"
             ),
-            ["回す 4、比べる 3、数える 2、開ける 1"]
+            "鍵を回す。".repeat(4)
         );
+        assert_eq!(excerpts(&text), ["回す 4、比べる 3、数える 2、開ける 1"]);
     }
 
     #[test]
