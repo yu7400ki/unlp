@@ -319,21 +319,48 @@ fn segment_kind(lang: SupportLang, node: &Node<StrDoc<SupportLang>>, face: Face)
     match (lang, face) {
         (SupportLang::Rust, Face::Comment) => {
             let text = node.text();
-            doc_or_comment(text.starts_with("///") || text.starts_with("//!"))
+            doc_or(
+                text.starts_with("///") || text.starts_with("//!"),
+                SegmentKind::Comment,
+            )
         }
         (SupportLang::TypeScript | SupportLang::Tsx | SupportLang::JavaScript, Face::Comment) => {
-            doc_or_comment(node.text().starts_with("/**"))
+            doc_or(node.text().starts_with("/**"), SegmentKind::Comment)
+        }
+        (SupportLang::Python, Face::StringLiteral) => {
+            doc_or(is_docstring(node), SegmentKind::StringLiteral)
         }
         (_, Face::Comment) => SegmentKind::Comment,
         (_, Face::StringLiteral) => SegmentKind::StringLiteral,
     }
 }
 
-fn doc_or_comment(is_doc: bool) -> SegmentKind {
+/// モジュール、関数、クラスの先頭に置いた文字列か。
+fn is_docstring(node: &Node<StrDoc<SupportLang>>) -> bool {
+    let Some(statement) = node.parent() else {
+        return false;
+    };
+    if statement.kind() != "expression_statement" || statement.prev().is_some() {
+        return false;
+    }
+    match statement.parent() {
+        Some(body) if body.kind() == "module" => true,
+        Some(body) if body.kind() == "block" => body.parent().is_some_and(|owner| {
+            matches!(
+                owner.kind().as_ref(),
+                "function_definition" | "class_definition"
+            )
+        }),
+        _ => false,
+    }
+}
+
+/// doc コメントであるか、そうでなければ与えた面。
+fn doc_or(is_doc: bool, plain: SegmentKind) -> SegmentKind {
     if is_doc {
         SegmentKind::DocComment
     } else {
-        SegmentKind::Comment
+        plain
     }
 }
 
@@ -513,6 +540,30 @@ mod tests {
         assert_eq!(
             kinds_of("a.ts", "/** doc だ。 */\n// 行だ。\n"),
             [SegmentKind::DocComment, SegmentKind::Comment]
+        );
+    }
+
+    #[test]
+    fn a_string_at_the_head_of_a_body_is_a_doc_comment() {
+        let source = concat!(
+            "\"\"\"モジュールの説明だ。\"\"\"\n",
+            "class C:\n",
+            "    \"\"\"クラスの説明だ。\"\"\"\n",
+            "def f(s):\n",
+            "    \"\"\"関数の説明だ。\"\"\"\n",
+            "    s = \"ただの文字列だ。\"\n",
+            "    if s:\n",
+            "        \"式の文字列だ。\"\n",
+        );
+        assert_eq!(
+            kinds_of("a.py", source),
+            [
+                SegmentKind::DocComment,
+                SegmentKind::DocComment,
+                SegmentKind::DocComment,
+                SegmentKind::StringLiteral,
+                SegmentKind::StringLiteral,
+            ]
         );
     }
 
