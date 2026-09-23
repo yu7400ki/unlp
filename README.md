@@ -12,7 +12,7 @@ Rust のツールチェーン（edition 2024）が必要です。形態素解析
 cargo install --path .
 ```
 
-git の `commit-msg` hook として設置すると、コミットのたびにメッセージと索引に載せた差分を採点し、しきい値を超過したコミットを拒否します。
+git の `commit-msg` hook として設置すると、コミットのたびにメッセージとステージした差分を採点し、しきい値を超過したコミットを拒否します。
 
 ```bash
 unlp hook install
@@ -24,7 +24,7 @@ unlp hook install
 
 ```bash
 unlp check README.md src/            # ファイルとディレクトリ
-unlp diff --staged                   # 索引に載せた差分が触れた範囲
+unlp diff --staged                   # ステージした差分が触れた範囲
 unlp diff HEAD~3..HEAD               # コミット範囲の差分
 unlp commits -n 20                   # 直近 20 件のコミットメッセージ
 unlp stdin < draft.txt               # 標準入力を 1 つの文書として
@@ -65,7 +65,7 @@ unlp rules                           # 規則 ID、層、重み、規則集の�
 | 定型句 | F01〜F06 | 締めの定型、太字、2 倍ダッシュと矢印、迂言 |
 | 語種 | G01 | 文末の述語の和語率 |
 
-点は、指摘の件数に規則の重みを掛けて合計し、日本語の文字数 1000 字あたりに正規化した値です。既定のしきい値は 10 点です。日本語が 300 字に満たない入力は正規化せず、構造か語彙の層の指摘が 1 件でもあれば超過として扱います。
+点は、指摘の件数に規則の重みを掛けて合計し、日本語の文字数 1000 字あたりに正規化した値です。デフォルトのしきい値は 10 点です。日本語が 300 字に満たない入力は正規化せず、構造か語彙の層の指摘が 1 件でもあれば超過として扱います。
 
 ## 設定
 
@@ -84,7 +84,7 @@ add = ["監督"]
 remove = ["相手"]
 ```
 
-しきい値、正規化の下限、除外するパスのグロブ、規則ごとの重み、語リストの追加と除外を指定できます。欄ごとの詳細は [skills/unlp/SKILL.md](skills/unlp/SKILL.md) に記載しています。既定の重みは [data/weights.toml](data/weights.toml)、既定の語リストは [data/lists](data/lists) にあります。
+しきい値、正規化の下限、除外するパスのグロブ、規則ごとの重み、語リストの追加と除外を指定できます。欄ごとの詳細は [skills/unlp/SKILL.md](skills/unlp/SKILL.md) に記載しています。デフォルトの重みは [data/weights.toml](data/weights.toml)、デフォルトの語リストは [data/lists](data/lists) にあります。
 
 ## 開発
 

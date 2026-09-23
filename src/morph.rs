@@ -19,7 +19,7 @@ const CFORM: &str = "conjugation_form";
 const LEMMA: &str = "orthographic_base_form";
 const GOSHU: &str = "word_type";
 
-/// Token の欄に写す辞書の列。
+/// Token の欄に変換する辞書の列。
 const COLUMNS: [&str; 7] = [POS1, POS2, POS3, CTYPE, CFORM, LEMMA, GOSHU];
 
 /// 形態素解析で生じる誤り。
@@ -39,7 +39,7 @@ pub struct Analyzer {
 }
 
 impl Analyzer {
-    /// 同梱した辞書を読み込む。辞書を読めないとき、および Token の欄に写す列の名前が
+    /// 同梱した辞書を読み込む。辞書を読めないとき、および Token の欄に変換する列の名前が
     /// 辞書のスキーマに無いときは、ここで誤りを返す。
     pub fn new() -> Result<Self> {
         let dictionary = load_embedded_dictionary(DictionaryKind::UniDic)
@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(unknown.ctype, None);
     }
 
-    /// 辞書が返す品詞と `Pos1` の対応。空白は `Segmenter` が空白の Token を落とすので
+    /// 辞書が返す品詞と `Pos1` の対応。空白は `Segmenter` が空白の Token を除くので
     /// 生じず、16 分類のうち残る 15 をここで突き合わせる。
     #[test]
     fn every_pos_of_the_dictionary_has_its_own_variant() {

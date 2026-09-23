@@ -116,7 +116,7 @@ const DIFF_OPTIONS: [&str; 8] = [
 /// 採点する差分の面。
 #[derive(Debug, Clone)]
 pub enum Diff {
-    /// 索引に載せた変更。
+    /// ステージした変更。
     Staged,
     /// git の範囲の指定。
     Range(String),
@@ -139,9 +139,9 @@ pub fn toplevel() -> Result<PathBuf> {
     ))
 }
 
-/// 差分が追加・変更した行に触れる Segment だけを持つ、ファイルごとの文書。索引または範囲の
-/// 右端のリビジョンにあるファイル全体を抽出し、触れていない Segment を落とす。抽出の書式を
-/// 定めていない種類は黙って飛ばす。作業ツリーは参照しない。
+/// 差分が追加・変更した行に触れる Segment だけを持つ、ファイルごとの文書。ステージ領域または
+/// 範囲の右端のリビジョンにあるファイル全体を抽出し、触れていない Segment を除く。抽出の書式を
+/// 定めていない種類は警告せずにスキップする。作業ツリーは参照しない。
 pub fn diff_documents(diff: &Diff) -> Result<Diffed> {
     let mut args = vec!["diff", "-U0", "--diff-filter=AM"];
     args.extend(DIFF_OPTIONS);
@@ -310,7 +310,7 @@ fn change_document(change: &Change, rev: Option<&str>, commit: Option<&str>) -> 
     })
 }
 
-/// 索引または指定したリビジョンにあるファイルの内容。UTF-8 で符号化されていなければ `None`。
+/// ステージ領域または指定したリビジョンにあるファイルの内容。UTF-8 で符号化されていなければ `None`。
 fn blob(spec: &str) -> Result<Option<String>> {
     Ok(String::from_utf8(run(&["show", spec])?).ok())
 }

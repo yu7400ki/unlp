@@ -117,7 +117,7 @@ pub enum Error {
 
 pub type Result<T> = result::Result<T, Error>;
 
-/// 設定ファイルの中身。欄を省いた設定は既定のままになる。
+/// 設定ファイルの中身。欄を省いた設定はデフォルトのままになる。
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
@@ -211,8 +211,8 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// 設定ファイルを同梱した既定に重ねる。`config` があればそのファイルを、無ければ `start`
-    /// から上位に走査して最初に見つかった `unlp.toml` を読む。どちらも無ければ既定になる。
+    /// 設定ファイルを同梱したデフォルトに重ねる。`config` があればそのファイルを、無ければ `start`
+    /// から上位に走査して最初に見つかった `unlp.toml` を読む。どちらも無ければデフォルトになる。
     pub fn load(config: Option<&Path>, start: &Path) -> Result<Self> {
         let path = match config {
             Some(path) => Some(absolute(path)?),
@@ -308,7 +308,7 @@ fn find(start: &Path) -> Result<Option<PathBuf>> {
         .find(|path| path.is_file()))
 }
 
-/// 現在のディレクトリを基準にして、`.` と `..` を畳んだパス。
+/// 現在のディレクトリを基準にして、`.` と `..` を解決したパス。
 fn absolute(path: &Path) -> Result<PathBuf> {
     let absolute = path::absolute(path).map_err(|source| Error::Read {
         path: path.to_path_buf(),
@@ -451,7 +451,7 @@ mod tests {
         assert!(!s01(&settings).contains("person", "利用者"));
         assert!(
             s01(&settings).contains("speech", "述べる"),
-            "触れていない欄は既定のまま"
+            "触れていない欄はデフォルトのまま"
         );
     }
 

@@ -112,7 +112,7 @@ impl Score {
         exceeds(&self.mode, &self.by_rule, threshold)
     }
 
-    /// 指摘の列を落とし、集計だけを残す。
+    /// 指摘の列を除き、集計だけを残す。
     pub fn forget_findings(&mut self) {
         self.findings = None;
     }
@@ -199,7 +199,7 @@ impl Report {
         self.total.exceeds(threshold)
     }
 
-    /// 文書ごとの指摘の列を落とし、集計だけを残す。
+    /// 文書ごとの指摘の列を除き、集計だけを残す。
     pub fn forget_findings(&mut self) {
         for document in &mut self.documents {
             document.score.forget_findings();
@@ -224,7 +224,7 @@ fn mode_for(
             *count as f64 * weight * 1000.0 / ja_chars as f64;
     }
     ScoreMode::Normalized {
-        // f64 の `sum` は空の列で -0.0 を返すため、0.0 から畳む。
+        // f64 の `sum` は空の列で -0.0 を返すため、0.0 から合計する。
         per_1000: by_layer.values().fold(0.0, |total, point| total + point),
         by_layer,
     }

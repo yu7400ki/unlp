@@ -3,7 +3,7 @@ use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
 
 const ID: RuleId = RuleId::new(Layer::Structure, 6);
-const HINT: &str = "毎文に接続詞を置かない。主題の流れで繋がるなら接続詞を落とす";
+const HINT: &str = "毎文に接続詞を置かない。主題の流れで繋がるなら接続詞を削除する";
 const CONJUNCTIONS: &str = "conjunctions";
 
 /// 抜粋で接続詞を隔てる読点。

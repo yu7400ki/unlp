@@ -125,11 +125,9 @@ fn the_normalized_point_weighs_the_findings() {
 
 #[test]
 fn rules_lists_the_rule_with_its_layer_weight_and_heading() {
-    unlp()
-        .arg("rules")
-        .assert()
-        .success()
-        .stdout(contains("S01  構造  3.00  文書・型・検査を語り手にしない"));
+    unlp().arg("rules").assert().success().stdout(contains(
+        "S01  構造  3.00  文書・型・テストを語り手にしない",
+    ));
 }
 
 #[test]

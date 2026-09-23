@@ -64,7 +64,7 @@ enum Command {
 
 #[derive(Subcommand)]
 enum HookCommand {
-    /// メッセージのファイルと索引に載せた差分をまとめて検査する
+    /// メッセージのファイルとステージした差分をまとめて検査する
     CommitMsg { file: PathBuf },
     /// git の commit-msg hook を設置する
     Install {
@@ -80,7 +80,7 @@ enum HookCommand {
 #[derive(Args)]
 #[group(multiple = false)]
 struct DiffFace {
-    /// 索引に載せた変更を対象にする
+    /// ステージした変更を対象にする
     #[arg(long)]
     staged: bool,
     /// コミットの範囲
@@ -88,8 +88,8 @@ struct DiffFace {
 }
 
 impl DiffFace {
-    /// 範囲を指定したときだけその範囲を対象にし、`--staged` と指定の無い呼び出しは索引に
-    /// 載せた変更を対象にする。
+    /// 範囲を指定したときだけその範囲を対象にし、`--staged` と指定の無い呼び出しは
+    /// ステージした変更を対象にする。
     fn face(&self) -> git::Diff {
         match (self.staged, &self.range) {
             (false, Some(range)) => git::Diff::Range(range.clone()),
@@ -272,7 +272,7 @@ fn diff(face: &git::Diff, settings: &Settings) -> Result<Vec<Document>> {
         .collect())
 }
 
-/// メッセージのファイルと索引に載せた差分を 1 つの入力にする。
+/// メッセージのファイルとステージした差分を 1 つの入力にする。
 fn commit_msg_documents(file: &Path, settings: &Settings) -> Result<Vec<Document>> {
     let message =
         fs::read_to_string(file).with_context(|| format!("{} を読み込めない", file.display()))?;
@@ -282,7 +282,7 @@ fn commit_msg_documents(file: &Path, settings: &Settings) -> Result<Vec<Document
 }
 
 /// 対象のパスを展開し、日本語を含むファイルを文書にする。設定が除外するファイルと抽出の書式を
-/// 定めていない種類は、明示されたパスなら警告し、走査で見つかったファイルは黙って飛ばす。
+/// 定めていない種類は、明示されたパスなら警告し、走査で見つかったファイルは警告せずにスキップする。
 /// UTF-8 でないファイルは警告して飛ばす。
 fn check(paths: &[PathBuf], settings: &Settings) -> Result<Vec<Document>> {
     let mut documents = Vec::new();
@@ -334,7 +334,7 @@ fn bench(path: &Path, settings: &Settings, options: &Options) -> Result<bool> {
     Ok(!benched.met())
 }
 
-/// 集合の文書。パスは `check` と同じ経路で読み、コミットは保存した `git log` の出力から読む。
+/// 集合の文書。パスは `check` と同じ処理で読み、コミットは保存した `git log` の出力から読む。
 fn set_documents(source: &bench::Source, settings: &Settings) -> Result<Vec<Document>> {
     match source {
         bench::Source::Paths(paths) => check(paths, settings),
@@ -490,7 +490,7 @@ fn rate_rows(sets: &[bench::SetScore]) -> Vec<Vec<String>> {
     rows
 }
 
-/// 先頭の欄を左に、他の欄を右に寄せ、欄の幅を列ごとに揃えて出力する。
+/// 先頭の欄を左揃え、他の欄を右揃えにし、欄の幅を列ごとに揃えて出力する。
 fn print_table(rows: &[Vec<String>]) {
     let mut widths: Vec<usize> = Vec::new();
     for row in rows {
@@ -535,7 +535,7 @@ fn print_rules(settings: &Settings) {
             .weights()
             .get(&rule)
             .copied()
-            .expect("一覧にある規則には既定の重みがある");
+            .expect("一覧にある規則にはデフォルトの重みがある");
         let heading = rule::doc_heading(anchor).expect("一覧にある規則の anchor は見出しを指す");
         println!("{rule}  {}  {weight:.2}  {heading}", rule.layer().name());
     }

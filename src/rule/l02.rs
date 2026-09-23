@@ -1,14 +1,16 @@
 use std::ops::Range;
 
-use crate::rule::predicate::{is_case_particle, is_comma, is_verb};
+use crate::rule::predicate::{is_case_particle, is_comma, is_noun, is_verb};
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, WordList, surface};
 use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
 
 const ID: RuleId = RuleId::new(Layer::Lexical, 2);
-const HINT: &str = "慣習語に置き換える: デフォルトでは、エラーにならずに失敗する、決済に失敗する、8 ワーカー構成のマシン";
+const HINT: &str = "慣習語に置き換える: デフォルトでは、エラーにならずに失敗する、決済に失敗する、8 ワーカー構成のマシン、パス、計測、ノード";
 const PHRASES: &str = "phrases";
 const MACHINES: &str = "machines";
+const TERMS: &str = "terms";
+const COMPOUNDS: &str = "compounds";
 
 /// 「の」の次から格助詞「を」までに挟む Token の上限。
 const GAP: usize = 6;
@@ -25,13 +27,31 @@ impl SentenceRule for LiteralTranslation {
         "L02"
     }
 
-    /// 語リストにある句が現れた箇所と、数えた物を持つ機械の形。
+    /// 語リストにある句が現れた箇所と、数えた物を持つ機械の形と、語リストの術語。
     fn check(&self, sentence: &Sentence, context: &Context) -> Vec<Finding> {
         let list = context.list(ID);
         let mut ranges = surface::matches(sentence.text(), list.words(PHRASES));
         ranges.extend(counted_possession(sentence.tokens(), list));
+        ranges.extend(terms(sentence, list));
         surface::findings_at(ID, sentence, ranges, HINT)
     }
+}
+
+/// 原形が語リストの術語にある名詞の範囲。「する」が続く動詞の用法と、語リストの複合語と
+/// 重なる語は除く。
+fn terms(sentence: &Sentence, list: &WordList) -> Vec<Range<usize>> {
+    let tokens = sentence.tokens();
+    let ranges = tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, token)| list.words(TERMS).any(|lemma| is_noun(token, lemma)))
+        .filter(|(index, _)| {
+            !tokens
+                .get(index + 1)
+                .is_some_and(|next| is_verb(next, "する"))
+        })
+        .map(|(_, token)| token.byte_range.clone());
+    surface::outside(sentence.text(), ranges, list.words(COMPOUNDS))
 }
 
 /// 数と助数詞に「の」が続き、名詞句の後に「を持つ」と語リストの名詞が並ぶ範囲。
@@ -102,6 +122,32 @@ mod tests {
         assert_eq!(excerpts("決済失敗を経験する。"), ["失敗を経験"]);
         assert_eq!(excerpts("速度を犠牲にして安全にする。"), ["を犠牲にし"]);
         assert_eq!(excerpts("値を明示的に指定します。"), ["明示的に指定し"]);
+    }
+
+    #[test]
+    fn a_term_of_the_list_is_a_finding() {
+        assert_eq!(excerpts("既定値を使う。"), ["既定"]);
+        assert_eq!(excerpts("経路の往復を数える。"), ["経路", "往復"]);
+        assert_eq!(excerpts("次の要求の応答を待つ。"), ["要求", "応答"]);
+        assert_eq!(excerpts("上限は実測で決める。"), ["実測"]);
+    }
+
+    #[test]
+    fn a_term_used_as_a_verb_is_not_a_finding() {
+        assert!(excerpts("時間を実測する。").is_empty());
+        assert!(excerpts("結果を照合した。").is_empty());
+    }
+
+    #[test]
+    fn a_term_inside_a_compound_of_the_list_is_not_a_finding() {
+        assert!(excerpts("逐語訳を避ける。").is_empty());
+        assert!(excerpts("要求仕様と線形応答を読む。").is_empty());
+        let text = "逐語訳を避ける。";
+        let context = harness::context(text).without_word(ID, COMPOUNDS, "逐語訳");
+        assert_eq!(
+            harness::excerpts_with(&LiteralTranslation, &context, text),
+            ["逐語"]
+        );
     }
 
     #[test]

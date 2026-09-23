@@ -24,7 +24,24 @@ pub fn matches<'a>(text: &str, phrases: impl IntoIterator<Item = &'a str>) -> Ve
     disjoint(found)
 }
 
-/// 文の中の範囲の抜粋。連続する空白を 1 つに畳み、`LIMIT` 文字を超える分は落とす。
+/// 範囲のうち、文の文字列に現れた句のどれとも重ならないもの。
+pub fn outside<'a>(
+    text: &str,
+    ranges: impl IntoIterator<Item = Range<usize>>,
+    phrases: impl IntoIterator<Item = &'a str>,
+) -> Vec<Range<usize>> {
+    let excluded = matches(text, phrases);
+    ranges
+        .into_iter()
+        .filter(|range| {
+            !excluded
+                .iter()
+                .any(|phrase| phrase.start < range.end && range.start < phrase.end)
+        })
+        .collect()
+}
+
+/// 文の中の範囲の抜粋。連続する空白を 1 つにまとめ、`LIMIT` 文字を超える分は切り捨てる。
 fn excerpt(text: &str, range: Range<usize>) -> String {
     let mut excerpt = String::new();
     let mut count = 0;
@@ -99,7 +116,7 @@ pub fn findings<'a>(
     findings_at(rule, sentence, matches(sentence.text(), phrases), hint)
 }
 
-/// 始まりの順に並べ、重なる範囲は前の範囲だけを残す。同じ位置に始まる範囲は長い方を採る。
+/// 始まりの順に並べ、重なる範囲は前の範囲だけを残す。同じ位置に始まる範囲は長い方を残す。
 fn disjoint(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
     ranges.sort_by_key(|range| (range.start, Reverse(range.end)));
     let mut kept: Vec<Range<usize>> = Vec::new();

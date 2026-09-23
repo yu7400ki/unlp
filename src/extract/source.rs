@@ -278,7 +278,7 @@ fn conversion(text: &str) -> Option<usize> {
         .then_some(rest.len() - letter.len() + 2)
 }
 
-/// バイト長と同じ数の空白を足す。
+/// バイト長と同じ数の空白を追加する。
 fn blanks(text: &mut String, length: usize) {
     text.extend(repeat_n(' ', length));
 }

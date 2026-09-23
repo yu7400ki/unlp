@@ -20,6 +20,11 @@ pub fn is_sahen_noun(token: &Token) -> bool {
     token.pos.pos1 == Pos1::Noun && token.pos.pos3 == "サ変可能"
 }
 
+/// 原形が一致する名詞。
+pub fn is_noun(token: &Token, lemma: &str) -> bool {
+    token.pos.pos1 == Pos1::Noun && token.lemma == lemma
+}
+
 /// 原形が一致する動詞。
 pub fn is_verb(token: &Token, lemma: &str) -> bool {
     token.pos.pos1 == Pos1::Verb && token.lemma == lemma

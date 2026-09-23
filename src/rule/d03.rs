@@ -9,7 +9,7 @@ const HINT: &str = "根拠が本文にあるなら言い切る。不確実なら
 /// 推量を表す活用形。
 const PRESUMPTIVE: &str = "意志推量形";
 
-/// 文の Token 列の位置から、そこに始まる緩和の並びの末尾の位置を返す照合。
+/// 文の Token 列の位置から、そこに始まる緩和の並びの末尾の位置。
 type Hedge = fn(&[Token], usize) -> Option<usize>;
 
 const HEDGES: [Hedge; 6] = [maybe, presumed, thought, possible, could_say, supposed];

@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::rule::predicate::is_verb;
+use crate::rule::predicate::{is_noun, is_verb};
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, WordList, surface};
 use crate::sentence::Sentence;
 use crate::token::Token;
@@ -9,6 +9,8 @@ const ID: RuleId = RuleId::new(Layer::Lexical, 1);
 const HINT: &str = "その分野で通っている語を使う: メニュー、メッセージ、ウィンドウ、キー、フラグ、フォーカスリング、ビルドする、高速パス、雛形、コールドスタート";
 const PHRASES: &str = "phrases";
 const VERBS: &str = "verbs";
+const NOUNS: &str = "nouns";
+const IDIOMS: &str = "idioms";
 
 /// 慣習語の和語化。
 pub struct NativizedTerm;
@@ -22,20 +24,28 @@ impl SentenceRule for NativizedTerm {
         "L01"
     }
 
-    /// 語リストにある句が現れた箇所と、原形が語リストにある動詞。
+    /// 語リストにある句が現れた箇所と、原形が語リストにある動詞と名詞。語リストの慣用句と
+    /// 重なる動詞と名詞は除く。
     fn check(&self, sentence: &Sentence, context: &Context) -> Vec<Finding> {
         let list = context.list(ID);
         let mut ranges = surface::matches(sentence.text(), list.words(PHRASES));
-        ranges.extend(verbs(sentence.tokens(), list));
+        ranges.extend(surface::outside(
+            sentence.text(),
+            lemmas(sentence.tokens(), list),
+            list.words(IDIOMS),
+        ));
         surface::findings_at(ID, sentence, ranges, HINT)
     }
 }
 
-/// 原形が語リストにある動詞の範囲。活用形は原形で照合する。
-fn verbs(tokens: &[Token], list: &WordList) -> Vec<Range<usize>> {
+/// 原形が語リストにある動詞と名詞の範囲。活用形は原形で照合する。
+fn lemmas(tokens: &[Token], list: &WordList) -> Vec<Range<usize>> {
     tokens
         .iter()
-        .filter(|token| list.words(VERBS).any(|lemma| is_verb(token, lemma)))
+        .filter(|token| {
+            list.words(VERBS).any(|lemma| is_verb(token, lemma))
+                || list.words(NOUNS).any(|lemma| is_noun(token, lemma))
+        })
         .map(|token| token.byte_range.clone())
         .collect()
 }
@@ -51,7 +61,7 @@ mod tests {
 
     #[test]
     fn a_phrase_of_the_list_is_a_finding() {
-        assert_eq!(excerpts("品書きに項目を足す。"), ["品書き"]);
+        assert_eq!(excerpts("品書きに項目を追加する。"), ["品書き"]);
         assert_eq!(excerpts("設定の窓で旗を立てる。"), ["設定の窓", "旗を立て"]);
         assert_eq!(
             excerpts("昇格していない窓で回し直してください。"),
@@ -67,6 +77,35 @@ mod tests {
         assert_eq!(excerpts("古いログを掃いた。"), ["掃い"]);
         assert_eq!(excerpts("結果を濾して返す。"), ["濾し"]);
         assert_eq!(excerpts("候補を濾す。"), ["濾す"]);
+    }
+
+    #[test]
+    fn a_noun_of_the_list_is_a_finding() {
+        assert_eq!(excerpts("篩に掛けて素通しにする。"), ["篩", "素通し"]);
+        assert_eq!(
+            excerpts("持ち越しの段取りを決める。"),
+            ["持ち越し", "段取り"]
+        );
+    }
+
+    #[test]
+    fn a_verb_of_the_list_is_a_finding_as_it_is_written() {
+        assert_eq!(excerpts("時間を測って結果を寄せる。"), ["測っ", "寄せる"]);
+        assert_eq!(excerpts("失敗は黙って畳む。"), ["黙っ", "畳む"]);
+    }
+
+    #[test]
+    fn a_verb_inside_an_idiom_of_the_list_is_not_a_finding() {
+        assert_eq!(excerpts("設定が効いている。"), ["効い"]);
+        assert!(excerpts("型が効いている。").is_empty());
+        assert_eq!(excerpts("末尾の空白を落とす。"), ["落とす"]);
+        assert!(excerpts("仕様をコードに落とす。").is_empty());
+        let text = "型が効いている。";
+        let context = harness::context(text).without_word(ID, IDIOMS, "型が効");
+        assert_eq!(
+            harness::excerpts_with(&NativizedTerm, &context, text),
+            ["効い"]
+        );
     }
 
     #[test]

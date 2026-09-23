@@ -310,10 +310,10 @@ mod tests {
     use super::*;
     use crate::settings::Settings;
 
-    /// 規則集が節ごとに 1 行で書く既定の重み。
-    const WEIGHT: &str = "既定の重み: ";
+    /// 規則集が節ごとに 1 行で書くデフォルトの重み。
+    const WEIGHT: &str = "デフォルトの重み: ";
 
-    /// anchor の節に書かれた既定の重み。行が無ければ空、複数あればその全部。
+    /// anchor の節に書かれたデフォルトの重み。行が無ければ空、複数あればその全部。
     fn doc_weights(anchor: &str) -> Vec<f64> {
         RULES
             .split("\n## ")
@@ -324,7 +324,7 @@ mod tests {
             })
             .flat_map(|section| section.lines())
             .filter_map(|line| line.strip_prefix(WEIGHT))
-            .map(|weight| weight.parse().expect("既定の重みは数で書く"))
+            .map(|weight| weight.parse().expect("デフォルトの重みは数で書く"))
             .collect()
     }
 
@@ -361,7 +361,7 @@ mod tests {
             assert_eq!(
                 doc_weights(anchor),
                 weight,
-                "{rule} の節の既定の重みが設定と食い違う"
+                "{rule} の節のデフォルトの重みが設定と一致しない"
             );
         }
     }
@@ -375,7 +375,7 @@ mod tests {
 
     #[test]
     fn a_heading_is_read_without_its_id() {
-        assert_eq!(doc_heading("S01"), Some("文書・型・検査を語り手にしない"));
+        assert_eq!(doc_heading("S01"), Some("文書・型・テストを語り手にしない"));
         assert_eq!(doc_heading("S0"), None);
         assert_eq!(doc_heading("Z99"), None);
     }

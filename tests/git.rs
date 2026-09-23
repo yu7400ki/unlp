@@ -167,18 +167,18 @@ const SPACED_PATH: &str = "docs/read me.md";
 
 const SPACED_BEFORE: &str = "空白を含む名前の段落だ。\n";
 
-const SPACED_AFTER: &str = "空白を含む名前の段落だ。\n\n足した段落だ。\n";
+const SPACED_AFTER: &str = "空白を含む名前の段落だ。\n\n追加した段落だ。\n";
 
 /// 差分に残る Segment。触った行に重なるノードだけが対象になる。
 const TOUCHED: [&str; 5] = [
     "複数行の段落の一行目だ。二行目を直した。",
     "追加した段落だ。",
-    "足した段落だ。",
+    "追加した段落だ。",
     "複数行にわたる説明の一行目だ。二行目を直した。",
     "追加した行のコメントだ。",
 ];
 
-/// 初期のコミットを持ち、変更を索引に載せたリポジトリ。
+/// 初期のコミットを持ち、変更をステージしたリポジトリ。
 fn repo_with_staged_change() -> Repo {
     let repo = Repo::new();
     repo.write("src/lib.rs", LIB_BEFORE);
@@ -366,7 +366,7 @@ fn a_renamed_file_is_scored_as_an_added_one() {
     repo.git(&["add", "."]);
     repo.commit("chore: init\n");
     repo.git(&["mv", "doc.md", "guide.md"]);
-    repo.write("guide.md", &format!("{guide}\n足した段落だ。\n"));
+    repo.write("guide.md", &format!("{guide}\n追加した段落だ。\n"));
     repo.git(&["add", "."]);
     assert!(
         repo.git(&["diff", "--cached", "--name-status"])
@@ -383,7 +383,7 @@ fn a_renamed_file_is_scored_as_an_added_one() {
             "次の段落だ。",
             "三つ目の段落だ。",
             "四つ目の段落だ。",
-            "足した段落だ。"
+            "追加した段落だ。"
         ]),
         "{report}"
     );
@@ -427,7 +427,7 @@ fn a_file_that_is_not_utf8_is_warned_and_skipped() {
     repo.commit("chore: init\n");
     // Shift_JIS の「日本」は NUL を含まないので、git は本文として差分に出す。
     fs::write(repo.path().join("sjis.md"), [0x93, 0xfa, 0x96, 0x7b, 0x0a]).unwrap();
-    repo.write("doc.md", "初めの段落だ。\n\n足した段落だ。\n");
+    repo.write("doc.md", "初めの段落だ。\n\n追加した段落だ。\n");
     repo.git(&["add", "."]);
 
     let report = json(repo.unlp().args(["diff", "--staged", "--json"]));

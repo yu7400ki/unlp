@@ -2,7 +2,7 @@ use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::Sentence;
 
 const ID: RuleId = RuleId::new(Layer::Register, 1);
-const HINT: &str = "報告書や仕様では中立語に寄せる（「〜のような」「〜する」）";
+const HINT: &str = "報告書や仕様では中立語を使う（「〜のような」「〜する」）";
 const PHRASES: &str = "phrases";
 
 /// 敬体の文書に混じる口語。
