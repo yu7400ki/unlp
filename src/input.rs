@@ -61,27 +61,18 @@ pub fn read_document(path: &Path) -> Result<Option<Document>> {
     Ok(extract::with_japanese(document))
 }
 
-/// 拡張子が決める書式。`.md` と `.markdown` は Markdown、構文木から取り出せる言語は
-/// ソースコード、`.txt` と拡張子の無いファイルは本文。他は対象外。
+/// 拡張子が決める書式。大小は区別しない。`.md` と `.markdown` は Markdown、構文木から
+/// 取り出せる言語はソースコード、`.txt` と拡張子の無いファイルは本文。他は対象外。
 fn format(path: &Path) -> Option<Format> {
-    if has_extension(path, &MARKDOWN_EXTENSIONS) {
-        return Some(Format::Markdown);
+    let extension = path
+        .extension()
+        .map(|extension| extension.to_string_lossy().to_lowercase());
+    match extension.as_deref() {
+        None => Some(Format::Text),
+        Some(extension) if MARKDOWN_EXTENSIONS.contains(&extension) => Some(Format::Markdown),
+        Some(extension) if TEXT_EXTENSIONS.contains(&extension) => Some(Format::Text),
+        Some(extension) => SourceLang::from_extension(extension).map(Format::Source),
     }
-    if let Some(lang) = SourceLang::from_path(path) {
-        return Some(Format::Source(lang));
-    }
-    let text = path.extension().is_none() || has_extension(path, &TEXT_EXTENSIONS);
-    text.then_some(Format::Text)
-}
-
-fn has_extension(path: &Path, extensions: &[&str]) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            extensions
-                .iter()
-                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
-        })
 }
 
 /// 文書の名前。パスの区切りは OS によらず `/` にする。
@@ -243,6 +234,21 @@ mod tests {
             read_document(&file).unwrap_err(),
             Error::NotUtf8 { .. }
         ));
+    }
+
+    #[test]
+    fn the_case_of_the_extension_does_not_matter() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, text) in [
+            ("A.RS", "// 日本語だ。\n"),
+            ("B.PY", "# 日本語だ。\n"),
+            ("C.MARKDOWN", "日本語だ。\n"),
+            ("D.TXT", "日本語だ。\n"),
+        ] {
+            let path = dir.path().join(name);
+            fs::write(&path, text).unwrap();
+            assert!(read_document(&path).unwrap().is_some(), "{name}");
+        }
     }
 
     #[test]

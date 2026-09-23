@@ -20,9 +20,9 @@ pub struct SourceLang {
 }
 
 impl SourceLang {
-    /// パスの拡張子が指す言語。取り出すノード種別を定めていない言語は `None`。
-    pub fn from_path(path: &Path) -> Option<Self> {
-        let lang = SupportLang::from_path(path)?;
+    /// 拡張子が指す言語。取り出すノード種別を定めた言語だけを返す。
+    pub fn from_extension(extension: &str) -> Option<Self> {
+        let lang = SupportLang::from_path(Path::new("source").with_extension(extension))?;
         Some(Self {
             lang,
             kinds: kinds(lang)?,
@@ -447,7 +447,9 @@ mod tests {
     use super::*;
 
     fn document(name: &str, text: &str) -> Document {
-        let lang = SourceLang::from_path(Path::new(name)).expect("対象の言語");
+        let extension = Path::new(name).extension().expect("拡張子を持つ名前");
+        let lang = SourceLang::from_extension(&extension.to_string_lossy())
+            .expect("種別を定めた言語の拡張子");
         source_document(name.to_string(), text, lang)
     }
 
@@ -469,11 +471,17 @@ mod tests {
 
     #[test]
     fn the_extension_chooses_the_language() {
-        for name in ["a.rs", "a.py", "a.ts", "a.tsx", "a.js", "a.jsx", "a.go"] {
-            assert!(SourceLang::from_path(Path::new(name)).is_some(), "{name}");
+        for extension in ["rs", "py", "ts", "tsx", "js", "jsx", "go"] {
+            assert!(
+                SourceLang::from_extension(extension).is_some(),
+                "{extension}"
+            );
         }
-        for name in ["a.md", "a.txt", "a.toml", "a.json", "a", "a.java"] {
-            assert!(SourceLang::from_path(Path::new(name)).is_none(), "{name}");
+        for extension in ["md", "txt", "toml", "json", "java", ""] {
+            assert!(
+                SourceLang::from_extension(extension).is_none(),
+                "{extension}"
+            );
         }
     }
 
