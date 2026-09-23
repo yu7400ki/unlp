@@ -284,18 +284,20 @@ fn the_bold_of_a_definition_item_and_of_a_code_span_is_not_counted() {
     let report = check_markdown(concat!(
         "- **ブランチの作成**: 作業ごとに切る。\n",
         "- オプションは **`--force`** を渡す。\n\n",
-        "これは **重要な** 点だ。\n",
+        "**注意**: 値を変える。\n\n",
+        "これは **重要な** 点だ。\n\n",
+        "**結論です。**理由を書く。\n",
     ));
-    assert_eq!(report["total"]["by_rule"]["F03"], 1);
-    let findings = report["documents"][0]["score"]["findings"]
+    assert_eq!(report["total"]["by_rule"]["F03"], 2);
+    assert_eq!(report["total"]["by_rule"]["F02"], 1);
+    let bold: Vec<&str> = report["documents"][0]["score"]["findings"]
         .as_array()
-        .unwrap();
-    assert!(
-        findings
-            .iter()
-            .any(|finding| finding["rule"] == "F03" && finding["excerpt"] == "**重要な**"),
-        "{findings:?}"
-    );
+        .unwrap()
+        .iter()
+        .filter(|finding| finding["rule"] == "F03")
+        .map(|finding| finding["excerpt"].as_str().unwrap())
+        .collect();
+    assert_eq!(bold, ["**重要な**", "**結論です。**"]);
 }
 
 #[test]
