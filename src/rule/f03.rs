@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::{self, Sentence};
 
@@ -16,11 +18,22 @@ impl SentenceRule for BoldInProse {
         "F03"
     }
 
-    /// 太字で囲んだ箇所。
+    /// 太字で囲んだ箇所。定義の列の見出し（文頭の太字に続くコロン）と、中身が記法だけの
+    /// 太字は数えない。
     fn check(&self, sentence: &Sentence, _context: &Context) -> Vec<Finding> {
-        let ranges = sentence::bold(sentence.text());
+        let text = sentence.text();
+        let ranges = sentence::bold(text)
+            .into_iter()
+            .filter(|range| !heads_a_definition(text, range))
+            .filter(|range| !sentence::inside_bold(text, range).trim().is_empty())
+            .collect();
         surface::findings_at(ID, sentence, ranges, HINT)
     }
+}
+
+/// 文頭の太字にコロンが続くか。
+fn heads_a_definition(text: &str, bold: &Range<usize>) -> bool {
+    bold.start == 0 && text[bold.end..].starts_with([':', '：'])
 }
 
 #[cfg(test)]
@@ -53,6 +66,22 @@ mod tests {
     fn a_sentence_without_bold_is_not_a_finding() {
         assert!(excerpts("強調を外した文だ。").is_empty());
         assert!(excerpts("**閉じない文だ。").is_empty());
+    }
+
+    #[test]
+    fn a_bold_heading_before_a_colon_is_not_a_finding() {
+        assert!(excerpts("**ブランチの作成**: 作業ごとに切る。").is_empty());
+        assert!(excerpts("**注意**：値を変える。").is_empty());
+        assert_eq!(
+            excerpts("値は **重要**: だと書く。"),
+            ["**重要**"],
+            "文頭でない太字はコロンが続いても数える"
+        );
+    }
+
+    #[test]
+    fn a_bold_around_a_blanked_code_span_is_not_a_finding() {
+        assert!(excerpts("オプションは **      ** を渡す。").is_empty());
     }
 
     #[test]
