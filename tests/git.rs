@@ -425,7 +425,7 @@ fn a_file_that_is_not_utf8_is_warned_and_skipped() {
     repo.write("doc.md", "初めの段落だ。\n");
     repo.git(&["add", "."]);
     repo.commit("chore: init\n");
-    // Shift_JIS の「日本」。NUL を含まないので git は本文として差分に出す。
+    // Shift_JIS の「日本」は NUL を含まないので、git は本文として差分に出す。
     fs::write(repo.path().join("sjis.md"), [0x93, 0xfa, 0x96, 0x7b, 0x0a]).unwrap();
     repo.write("doc.md", "初めの段落だ。\n\n足した段落だ。\n");
     repo.git(&["add", "."]);
