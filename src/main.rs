@@ -138,13 +138,21 @@ fn main() -> ExitCode {
 
 fn run() -> Result<bool> {
     let cli = Cli::parse();
-    let settings = match &cli.command {
-        // hook の設置と除去は設定を読まない。壊れた設定でも hook を外せる
+    match &cli.command {
         Command::Hook {
-            command: HookCommand::Install { .. } | HookCommand::Uninstall,
-        } => Settings::default(),
-        command => Settings::load(cli.options.config.as_deref(), config_start(command))?,
-    };
+            command: HookCommand::Install { force },
+        } => return install_hook(*force),
+        Command::Hook {
+            command: HookCommand::Uninstall,
+        } => {
+            if let Some(path) = git::uninstall_hook()? {
+                println!("{} を除去した", path.display());
+            }
+            return Ok(false);
+        }
+        _ => {}
+    }
+    let settings = Settings::load(cli.options.config.as_deref(), config_start(&cli.command))?;
     let documents = match &cli.command {
         Command::Rules => {
             print_rules(&settings);
@@ -158,16 +166,10 @@ fn run() -> Result<bool> {
             let document = format.document(STDIN_NAME.to_string(), &text);
             extract::with_japanese(document).into_iter().collect()
         }
-        Command::Hook { command } => match command {
-            HookCommand::CommitMsg { file } => commit_msg_documents(file, &settings)?,
-            HookCommand::Install { force } => return install_hook(*force),
-            HookCommand::Uninstall => {
-                if let Some(path) = git::uninstall_hook()? {
-                    println!("{} を除去した", path.display());
-                }
-                return Ok(false);
-            }
-        },
+        Command::Hook {
+            command: HookCommand::CommitMsg { file },
+        } => commit_msg_documents(file, &settings)?,
+        Command::Hook { .. } => unreachable!("設置と除去は設定を読む前に処理する"),
     };
 
     let analyzer = Analyzer::new()?;

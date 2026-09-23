@@ -1,25 +1,17 @@
 use std::fs;
-use std::sync::LazyLock;
 
 use assert_cmd::Command;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use serde_json::Value;
-use tempfile::TempDir;
 
 /// 欄を持たない設定のファイル。同梱した既定だけで採点させるために渡す。
-static EMPTY_CONFIG: LazyLock<TempDir> = LazyLock::new(|| {
-    let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join("unlp.toml"), "").unwrap();
-    dir
-});
+const EMPTY_CONFIG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/empty.toml");
 
 /// 同梱した既定の設定で実行するコマンド。
 fn unlp() -> Command {
     let mut command = repo_unlp();
-    command
-        .arg("--config")
-        .arg(EMPTY_CONFIG.path().join("unlp.toml"));
+    command.arg("--config").arg(EMPTY_CONFIG);
     command
 }
 
