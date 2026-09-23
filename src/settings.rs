@@ -456,6 +456,12 @@ mod tests {
     }
 
     #[test]
+    fn a_removed_word_outside_the_defaults_is_not_an_error() {
+        let dir = dir_with("[lists.S01.person]\nremove = [\"辞書に無い語\"]\n");
+        assert!(s01(&found_in(dir.path()).unwrap()).contains("person", "利用者"));
+    }
+
+    #[test]
     fn a_word_in_both_the_add_and_the_remove_is_removed() {
         let dir = dir_with("[lists.S01.person]\nadd = [\"型\"]\nremove = [\"型\"]\n");
         assert!(!s01(&found_in(dir.path()).unwrap()).contains("person", "型"));
