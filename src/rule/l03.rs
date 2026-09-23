@@ -1,4 +1,4 @@
-use crate::rule::predicate::{is_aux_verb, is_verb};
+use crate::rule::predicate::{is_aux_verb, is_conjunctive_particle, is_verb};
 use crate::rule::{Context, Finding, Layer, RuleId, SentenceRule, surface};
 use crate::sentence::Sentence;
 use crate::token::{Pos1, Token};
@@ -46,10 +46,6 @@ fn at_the_moment(tokens: &[Token], index: usize) -> Option<usize> {
     let end = index + 2;
     let window = tokens.get(index..=end)?;
     (is_past(&window[1]) && is_moment(&window[2])).then_some(end)
-}
-
-fn is_conjunctive_particle(token: &Token) -> bool {
-    token.pos.pos1 == Pos1::Particle && token.pos.pos2 == "接続助詞"
 }
 
 fn is_beginning(token: &Token) -> bool {

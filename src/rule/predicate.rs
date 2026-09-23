@@ -10,6 +10,11 @@ pub fn is_case_particle(token: &Token, surface: &str) -> bool {
     is_particle(token, surface) && token.pos.pos2 == "格助詞"
 }
 
+/// 接続助詞であるか。
+pub fn is_conjunctive_particle(token: &Token) -> bool {
+    token.pos.pos1 == Pos1::Particle && token.pos.pos2 == "接続助詞"
+}
+
 /// 読点。
 pub fn is_comma(token: &Token) -> bool {
     token.pos.pos1 == Pos1::SupplementarySymbol && token.pos.pos2 == "読点"
