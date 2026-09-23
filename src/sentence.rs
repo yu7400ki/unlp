@@ -7,7 +7,7 @@ use crate::token::{Pos1, Token};
 pub(crate) const BOLD: &str = "**";
 
 /// 文を終える記号。
-const TERMINATORS: [char; 3] = ['。', '！', '？'];
+pub(crate) const TERMINATORS: [char; 3] = ['。', '！', '？'];
 
 /// Segment から切り出した 1 文。`byte_range` は Segment の文字列の中の位置。
 #[derive(Debug, Clone)]

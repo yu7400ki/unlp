@@ -18,9 +18,12 @@ impl SentenceRule for BoldInProse {
         "F03"
     }
 
-    /// 太字で囲んだ箇所。定義の列の見出し（文頭の太字に続くコロン）と、中身が記法だけの
-    /// 太字は数えない。
+    /// 太字で囲んだ箇所。定義の列の見出し（文頭の太字に続くコロン）、見出しの代わりに
+    /// 置いた太字だけの一区切り、中身が記法だけの太字は数えない。
     fn check(&self, sentence: &Sentence, _context: &Context) -> Vec<Finding> {
+        if stands_for_a_heading(sentence) {
+            return Vec::new();
+        }
         let text = sentence.text();
         let ranges = sentence::bold(text)
             .into_iter()
@@ -29,6 +32,16 @@ impl SentenceRule for BoldInProse {
             .collect();
         surface::findings_at(ID, sentence, ranges, HINT)
     }
+}
+
+/// 文の属する一区切りが、句点で終わらない太字 1 つだけでできているか。
+fn stands_for_a_heading(sentence: &Sentence) -> bool {
+    let text = sentence.segment().text.trim();
+    matches!(sentence::bold(text).as_slice(), [range]
+        if *range == (0..text.len())
+            && !sentence::inside_bold(text, range)
+                .trim_end()
+                .ends_with(sentence::TERMINATORS))
 }
 
 /// 文頭の太字が定義の見出しか。コロンは太字の直後にも内側の末尾にも置かれる。
@@ -83,6 +96,25 @@ mod tests {
             ["**重要**"],
             "文頭でない太字はコロンが続いても数える"
         );
+    }
+
+    #[test]
+    fn a_segment_of_a_bold_heading_alone_is_not_a_finding() {
+        assert!(excerpts("**参考文献**").is_empty());
+        assert!(excerpts(" **参考文献** ").is_empty());
+    }
+
+    #[test]
+    fn a_segment_of_a_bold_sentence_alone_is_a_finding() {
+        assert_eq!(excerpts("**結論です。**"), ["**結論です。**"]);
+        assert_eq!(excerpts("**本当か？**"), ["**本当か？**"]);
+    }
+
+    #[test]
+    fn a_bold_with_other_text_in_the_segment_is_a_finding() {
+        assert_eq!(excerpts("**注意** この設定は無効です。"), ["**注意**"]);
+        assert_eq!(excerpts("**参考文献**\n本文を読む。"), ["**参考文献**"]);
+        assert_eq!(excerpts("**甲** と **乙**"), ["**甲**", "**乙**"]);
     }
 
     #[test]
