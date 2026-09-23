@@ -503,12 +503,16 @@ fn a_plain_document_leaves_the_colloquialisms_and_the_hedges_alone() {
 #[test]
 fn the_rule_book_stays_within_the_wago_ratio() {
     let report = json(repo_unlp().args(["check", "skills/", "--json"]));
-    let score = &report["documents"][0]["score"];
-    assert_eq!(score["mode"]["kind"], "normalized", "{score}");
-    assert!(
-        score["measures"]["final_wago_ratio"].as_f64().unwrap() < 0.7,
-        "{score}"
-    );
+    let documents = report["documents"].as_array().unwrap();
+    assert_eq!(documents.len(), 2, "{documents:?}");
+    for document in documents {
+        let score = &document["score"];
+        assert_eq!(score["mode"]["kind"], "normalized", "{score}");
+        assert!(
+            score["measures"]["final_wago_ratio"].as_f64().unwrap() < 0.7,
+            "{score}"
+        );
+    }
 }
 
 #[test]
