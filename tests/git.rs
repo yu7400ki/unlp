@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use assert_cmd::Command;
-use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -208,7 +207,11 @@ fn commits_score_the_messages_without_the_trailers() {
     repo.commit("feat: 機能を追加する\n");
     repo.write("c.txt", "また次の文だ。\n");
     repo.git(&["add", "."]);
-    repo.commit("fix: 誤りを直す\n\n本文の文だ。\n\nCo-Authored-By: 手伝い <a@example.com>\n");
+    repo.commit(concat!(
+        "fix: 誤りを直す\n\n本文の文だ。\n\n",
+        "Co-Authored-By: 手伝い <a@example.com>\n",
+        "Reviewed-by: doc が名乗る <a@example.com>\n",
+    ));
     repo.write("d.txt", "最後の文だ。\n");
     repo.git(&["add", "."]);
     repo.commit("chore: bump the deps\n");
@@ -221,17 +224,20 @@ fn commits_score_the_messages_without_the_trailers() {
         "{report}"
     );
 
+    let trailered = &report["documents"][0]["score"];
+    assert_eq!(
+        trailered["ja_chars"],
+        ja_chars(["誤りを直す", "本文の文だ。"]),
+        "{trailered}"
+    );
+    assert_eq!(trailered["findings"].as_array().unwrap(), &[] as &[Value]);
+    assert_eq!(report["total"]["by_rule"].as_object().unwrap().len(), 0);
+
     let short = repo.git(&["rev-parse", "--short=7", "HEAD~1"]);
     let names = names(&report);
     assert!(names[0].starts_with(short.trim()), "{names:?}");
     assert!(names[0].contains("誤りを直す"), "{names:?}");
     assert!(names[1].contains("機能を追加する"), "{names:?}");
-
-    repo.unlp()
-        .args(["commits", "-n", "3"])
-        .assert()
-        .success()
-        .stdout(contains("手伝い").not());
 }
 
 #[test]
