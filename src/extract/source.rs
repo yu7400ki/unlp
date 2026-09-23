@@ -105,16 +105,35 @@ fn body(node: &Node<StrDoc<SupportLang>>, face: Face) -> String {
 /// 文字列リテラルの値。区切り文字を除き、エスケープを復元し、補間を同じバイト長の空白にする。
 fn literal_body(node: &Node<StrDoc<SupportLang>>) -> String {
     let mut body = String::new();
+    let mut continued = false;
     for child in node.children() {
+        let continues = child.kind() == ESCAPE && is_continuation(&child.text());
         match child.kind().as_ref() {
+            ESCAPE if continues => {}
             ESCAPE => body.push_str(&unescape(&child.text())),
-            kind if is_content(kind) => body.push_str(&content(&child)),
+            kind if is_content(kind) => {
+                let value = content(&child);
+                body.push_str(after_continuation(&value, continued));
+            }
             "string_start" | "string_end" => {}
             _ if !child.is_named() => {}
             _ => blanks(&mut body, child.range().len()),
         }
+        continued = continues;
     }
     body
+}
+
+/// 行を継続するエスケープか。
+fn is_continuation(escape: &str) -> bool {
+    escape
+        .strip_prefix('\\')
+        .is_some_and(|rest| rest.starts_with(['\n', '\r']))
+}
+
+/// 行を継続した後の値。続きの行の字下げを除く。
+fn after_continuation(value: &str, continued: bool) -> &str {
+    if continued { value.trim_start() } else { value }
 }
 
 /// エスケープを表すノードの種別。
@@ -131,18 +150,25 @@ fn content(node: &Node<StrDoc<SupportLang>>) -> String {
     let start = node.range().start;
     let mut value = String::with_capacity(text.len());
     let mut at = 0;
+    let mut continued = false;
     for child in node.children() {
         let range = child.range();
         let (from, to) = (range.start - start, range.end - start);
-        value.push_str(&text[at..from]);
+        value.push_str(after_continuation(&text[at..from], continued));
+        continued = false;
         if child.kind() == ESCAPE {
-            value.push_str(&unescape(&child.text()));
+            let escape = child.text();
+            if is_continuation(&escape) {
+                continued = true;
+            } else {
+                value.push_str(&unescape(&escape));
+            }
         } else {
             blanks(&mut value, to - from);
         }
         at = to;
     }
-    value.push_str(&text[at..]);
+    value.push_str(after_continuation(&text[at..], continued));
     value
 }
 
@@ -535,6 +561,21 @@ mod tests {
         assert_eq!(
             texts("a.go", "var x = \"符号位置の \\u3042 だ。\"\n"),
             ["符号位置の あ だ。"]
+        );
+    }
+
+    #[test]
+    fn a_line_that_continues_stays_one_sentence() {
+        assert_eq!(
+            texts(
+                "a.rs",
+                "fn f() { let s = \"改行を\\\n             続ける一文だ。\"; }\n"
+            ),
+            ["改行を続ける一文だ。"]
+        );
+        assert_eq!(
+            texts("a.py", "s = \"改行を\\\n    続ける一文だ。\"\n"),
+            ["改行を続ける一文だ。"]
         );
     }
 
