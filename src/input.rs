@@ -5,13 +5,16 @@ use std::{fs, result};
 use thiserror::Error;
 
 use crate::document::Document;
-use crate::extract;
+use crate::extract::{self, SourceLang};
 
 /// 探索の対象から除くディレクトリの名前。
 const EXCLUDED_DIRS: [&str; 3] = ["target", "node_modules", ".git"];
 
 /// Markdown として抽出する拡張子。
 const MARKDOWN_EXTENSIONS: [&str; 2] = ["md", "markdown"];
+
+/// 全体を本文として抽出する拡張子。拡張子の無いファイルも本文にする。
+const TEXT_EXTENSIONS: [&str; 1] = ["txt"];
 
 /// 入力の読み込みで生じる誤り。
 #[derive(Debug, Error)]
@@ -24,13 +27,24 @@ pub enum Error {
     },
     #[error("{} は UTF-8 で符号化されていない", path.display())]
     NotUtf8 { path: PathBuf },
+    #[error("{} は抽出の対象でない", path.display())]
+    Unsupported { path: PathBuf },
 }
 
 pub type Result<T> = result::Result<T, Error>;
 
-/// ファイルを 1 つの文書として読み込む。`.md` と `.markdown` は Markdown の本文を、
-/// 他の拡張子は全体を抽出する。日本語の文字を含む Segment が無ければ `None`。
+/// ファイルを抽出する書式。
+enum Format {
+    Markdown,
+    Source(SourceLang),
+    Text,
+}
+
+/// ファイルを 1 つの文書として読み込む。日本語の文字を含む Segment が無ければ `None`。
 pub fn read_document(path: &Path) -> Result<Option<Document>> {
+    let format = format(path).ok_or_else(|| Error::Unsupported {
+        path: path.to_path_buf(),
+    })?;
     let bytes = fs::read(path).map_err(|source| Error::Read {
         path: path.to_path_buf(),
         source,
@@ -39,21 +53,34 @@ pub fn read_document(path: &Path) -> Result<Option<Document>> {
         path: path.to_path_buf(),
     })?;
     let name = document_name(path);
-    let document = if is_markdown(path) {
-        extract::markdown_document(name, &text)
-    } else {
-        extract::text_document(name, &text)
+    let document = match format {
+        Format::Markdown => extract::markdown_document(name, &text),
+        Format::Source(lang) => extract::source_document(name, &text, lang),
+        Format::Text => extract::text_document(name, &text),
     };
     Ok(extract::with_japanese(document))
 }
 
-fn is_markdown(path: &Path) -> bool {
+/// 拡張子が決める書式。`.md` と `.markdown` は Markdown、構文木から取り出せる言語は
+/// ソースコード、`.txt` と拡張子の無いファイルは本文。他は対象外。
+fn format(path: &Path) -> Option<Format> {
+    if has_extension(path, &MARKDOWN_EXTENSIONS) {
+        return Some(Format::Markdown);
+    }
+    if let Some(lang) = SourceLang::from_path(path) {
+        return Some(Format::Source(lang));
+    }
+    let text = path.extension().is_none() || has_extension(path, &TEXT_EXTENSIONS);
+    text.then_some(Format::Text)
+}
+
+fn has_extension(path: &Path, extensions: &[&str]) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| {
-            MARKDOWN_EXTENSIONS
+            extensions
                 .iter()
-                .any(|markdown| extension.eq_ignore_ascii_case(markdown))
+                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
         })
 }
 
@@ -164,6 +191,21 @@ mod tests {
             let document = read_document(&path).unwrap().unwrap();
             assert_eq!(document.segments.len(), segments, "{name}");
         }
+        let source = dir.path().join("a.rs");
+        fs::write(
+            &source,
+            "// コメントだ。\nfn f() { let s = \"文字列だ。\"; }\n",
+        )
+        .unwrap();
+        let document = read_document(&source).unwrap().unwrap();
+        assert_eq!(
+            document
+                .segments
+                .iter()
+                .map(|segment| segment.text.as_str())
+                .collect::<Vec<&str>>(),
+            ["コメントだ。", "文字列だ。"]
+        );
         assert_eq!(
             read_document(&dir.path().join("a.md"))
                 .unwrap()
@@ -195,11 +237,24 @@ mod tests {
     #[test]
     fn invalid_utf8_is_reported_as_such() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("a.bin");
+        let file = dir.path().join("a.txt");
         fs::write(&file, [0xff, 0xfe, 0x00]).unwrap();
         assert!(matches!(
             read_document(&file).unwrap_err(),
             Error::NotUtf8 { .. }
         ));
+    }
+
+    #[test]
+    fn an_extension_out_of_the_formats_is_unsupported() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["a.toml", "a.json", "a.yml", "a.bin"] {
+            let path = dir.path().join(name);
+            fs::write(&path, "値 = \"日本語だ。\"\n").unwrap();
+            assert!(
+                matches!(read_document(&path), Err(Error::Unsupported { .. })),
+                "{name}"
+            );
+        }
     }
 }

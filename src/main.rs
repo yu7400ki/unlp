@@ -126,8 +126,8 @@ fn run() -> Result<bool> {
         .is_some_and(|point| report.exceeds(point)))
 }
 
-/// 対象のパスを展開し、日本語を含むファイルを文書にする。UTF-8 でないファイルは
-/// 警告して飛ばす。
+/// 対象のパスを展開し、日本語を含むファイルを文書にする。抽出の対象でないファイルと
+/// UTF-8 でないファイルは警告して飛ばす。
 fn check(paths: &[PathBuf]) -> Result<Vec<Document>> {
     let mut files = Vec::new();
     for path in paths {
@@ -137,7 +137,9 @@ fn check(paths: &[PathBuf]) -> Result<Vec<Document>> {
     for file in files {
         match input::read_document(&file) {
             Ok(document) => documents.extend(document),
-            Err(error @ input::Error::NotUtf8 { .. }) => eprintln!("警告: {error}"),
+            Err(error @ (input::Error::NotUtf8 { .. } | input::Error::Unsupported { .. })) => {
+                eprintln!("警告: {error}")
+            }
             Err(error) => return Err(error.into()),
         }
     }
