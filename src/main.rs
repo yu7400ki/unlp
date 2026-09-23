@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{Read, stdin};
 use std::path::{Path, PathBuf};
@@ -10,7 +10,7 @@ use unlp::extract::{self, STDIN_NAME};
 use unlp::morph::Analyzer;
 use unlp::score::{DocumentScore, Report, Score, ScoreMode, Total};
 use unlp::settings::Settings;
-use unlp::{Document, Finding, Layer, git, input, rule};
+use unlp::{Document, Finding, Layer, RuleId, bench, git, input, rule};
 
 /// 日本語の文章に残る AI の癖を検出して採点する。
 #[derive(Parser)]
@@ -55,6 +55,11 @@ enum Command {
     },
     /// 規則の一覧と規則集の見出しを出力する
     Rules,
+    /// 較正のコーパスを集合ごとに採点する
+    Bench {
+        /// コーパスの一覧のファイル
+        manifest: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -158,6 +163,7 @@ fn run() -> Result<bool> {
             print_rules(&settings);
             return Ok(false);
         }
+        Command::Bench { manifest } => return bench(manifest, &settings, cli.options.json),
         Command::Check { paths } => check(paths, &settings)?,
         Command::Diff { face } => diff(&face.face(), &settings)?,
         Command::Commits { number, range } => git::commit_documents(&commit_range(*number, range))?,
@@ -173,23 +179,7 @@ fn run() -> Result<bool> {
     };
 
     let analyzer = Analyzer::new()?;
-    let mut scores = Vec::new();
-    for document in &documents {
-        let sentences = analyzer.analyze_document(document);
-        let context = rule::Context::for_document(&sentences, &settings);
-        let findings = rule::check(&sentences, &context, settings.floor());
-        scores.push(DocumentScore {
-            name: document.name.clone(),
-            score: Score::new(
-                &sentences,
-                findings,
-                context.measures().clone(),
-                settings.floor(),
-                context.weights(),
-            ),
-        });
-    }
-    let mut report = Report::new(scores, settings.floor(), settings.weights());
+    let mut report = report(&documents, &analyzer, &settings);
     if cli.options.summary {
         report.forget_findings();
     }
@@ -206,15 +196,38 @@ fn run() -> Result<bool> {
     Ok(fail_over.is_some_and(|point| report.exceeds(point)))
 }
 
-/// 設定ファイルを探索する起点。`check` は最初の対象のパス、他の面は現在のディレクトリ。
+/// 設定ファイルを探索する起点。`check` は最初の対象のパス、`bench` はコーパスの一覧、他の面は
+/// 現在のディレクトリ。
 fn config_start(command: &Command) -> &Path {
     match command {
         Command::Check { paths } => paths
             .first()
             .expect("check は対象のパスを 1 つ以上取る")
             .as_path(),
+        Command::Bench { manifest } => manifest.as_path(),
         _ => Path::new("."),
     }
+}
+
+/// 文書を解析して採点する。
+fn report(documents: &[Document], analyzer: &Analyzer, settings: &Settings) -> Report {
+    let mut scores = Vec::new();
+    for document in documents {
+        let sentences = analyzer.analyze_document(document);
+        let context = rule::Context::for_document(&sentences, settings);
+        let findings = rule::check(&sentences, &context, settings.floor());
+        scores.push(DocumentScore {
+            name: document.name.clone(),
+            score: Score::new(
+                &sentences,
+                findings,
+                context.measures().clone(),
+                settings.floor(),
+                context.weights(),
+            ),
+        });
+    }
+    Report::new(scores, settings.floor(), settings.weights())
 }
 
 /// `--fail-over` を指定しないときのしきい値。関門は設定のしきい値で判断する。
@@ -298,6 +311,37 @@ fn check(paths: &[PathBuf], settings: &Settings) -> Result<Vec<Document>> {
     Ok(documents)
 }
 
+/// 較正のコーパスを集合ごとに採点する。
+fn bench(manifest: &Path, settings: &Settings, json: bool) -> Result<bool> {
+    let manifest = bench::Manifest::load(manifest)?;
+    let analyzer = Analyzer::new()?;
+    let mut sets = Vec::new();
+    for set in manifest.sets() {
+        let documents = set_documents(&set.source, settings)?;
+        let total = report(&documents, &analyzer, settings).total().clone();
+        sets.push(bench::SetScore::new(set, total));
+    }
+    let report = bench::BenchReport::new(sets);
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print_bench(&report);
+    }
+    Ok(false)
+}
+
+/// 集合の文書。パスは `check` と同じ経路で読み、コミットは保存した `git log` の出力から読む。
+fn set_documents(source: &bench::Source, settings: &Settings) -> Result<Vec<Document>> {
+    match source {
+        bench::Source::Paths(paths) => check(paths, settings),
+        bench::Source::Commits(path) => {
+            let log = fs::read_to_string(path)
+                .with_context(|| format!("{} を読み込めない", path.display()))?;
+            Ok(git::log_documents(&log))
+        }
+    }
+}
+
 /// 範囲を指定しなければ直近の件数で、件数も指定しなければ直近の 1 件を対象にする。
 fn commit_range(number: Option<u32>, range: &Option<String>) -> git::CommitRange {
     match range {
@@ -337,6 +381,114 @@ fn print_findings(findings: &[Finding]) {
             finding.hint()
         );
     }
+}
+
+/// 正規化した点を持たない集合の点の欄。
+const BELOW_FLOOR: &str = "下限未満";
+
+/// 集合ごとの点と層の小計、規則ごとの 1000 字あたりの件数を表にする。
+fn print_bench(report: &bench::BenchReport) {
+    print_table(&point_rows(report.sets()));
+    println!();
+    print_table(&rate_rows(report.sets()));
+}
+
+/// 集合ごとの側、文字数、文数、点、層の小計。
+fn point_rows(sets: &[bench::SetScore]) -> Vec<Vec<String>> {
+    let mut header = vec![
+        "集合".to_string(),
+        "側".to_string(),
+        "文字数".to_string(),
+        "文数".to_string(),
+        "点".to_string(),
+    ];
+    header.extend(Layer::ALL.iter().map(|layer| layer.name().to_string()));
+    let mut rows = vec![header];
+    for set in sets {
+        let total = set.total();
+        let mut row = vec![
+            set.name().to_string(),
+            set.side().name().to_string(),
+            total.ja_chars().to_string(),
+            total.sentences().to_string(),
+        ];
+        match total.mode() {
+            ScoreMode::Normalized { per_1000, by_layer } => {
+                row.push(format!("{per_1000:.1}"));
+                row.extend(Layer::ALL.iter().map(|layer| {
+                    format!("{:.1}", by_layer.get(layer).copied().unwrap_or_default())
+                }));
+            }
+            ScoreMode::CountOnly => {
+                row.push(BELOW_FLOOR.to_string());
+                row.extend(Layer::ALL.iter().map(|_| "-".to_string()));
+            }
+        }
+        rows.push(row);
+    }
+    rows
+}
+
+/// 集合ごとの規則別の 1000 字あたりの件数。
+fn rate_rows(sets: &[bench::SetScore]) -> Vec<Vec<String>> {
+    let rules: BTreeSet<RuleId> = rule::registered()
+        .into_iter()
+        .map(|(rule, _)| rule)
+        .collect();
+    let mut header = vec!["集合".to_string()];
+    header.extend(rules.iter().map(RuleId::to_string));
+    let mut rows = vec![header];
+    for set in sets {
+        let mut row = vec![set.name().to_string()];
+        row.extend(rules.iter().map(|rule| {
+            let rate = set
+                .by_rule_per_1000()
+                .get(rule)
+                .copied()
+                .unwrap_or_default();
+            format!("{rate:.1}")
+        }));
+        rows.push(row);
+    }
+    rows
+}
+
+/// 先頭の欄を左に、他の欄を右に寄せ、欄の幅を列ごとに揃えて出力する。
+fn print_table(rows: &[Vec<String>]) {
+    let mut widths: Vec<usize> = Vec::new();
+    for row in rows {
+        for (at, cell) in row.iter().enumerate() {
+            let width = display_width(cell);
+            match widths.get_mut(at) {
+                Some(current) => *current = (*current).max(width),
+                None => widths.push(width),
+            }
+        }
+    }
+    for row in rows {
+        let cells: Vec<String> = row
+            .iter()
+            .zip(&widths)
+            .enumerate()
+            .map(|(at, (cell, width))| pad(cell, *width, at == 0))
+            .collect();
+        println!("{}", cells.join("  ").trim_end());
+    }
+}
+
+/// 表示の幅を揃えた欄。
+fn pad(cell: &str, width: usize, left: bool) -> String {
+    let space = " ".repeat(width.saturating_sub(display_width(cell)));
+    if left {
+        format!("{cell}{space}")
+    } else {
+        format!("{space}{cell}")
+    }
+}
+
+/// 等幅の端末で占める幅。ASCII の文字を 1、他を 2 と数える。
+fn display_width(text: &str) -> usize {
+    text.chars().map(|c| if c.is_ascii() { 1 } else { 2 }).sum()
 }
 
 /// 規則の ID、層、重み、規則集の見出しを 1 行ずつ出力する。

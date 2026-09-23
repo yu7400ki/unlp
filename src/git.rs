@@ -74,9 +74,14 @@ pub fn commit_documents(range: &CommitRange) -> Result<Vec<Document>> {
     let mut args = vec!["log".to_string(), "--format=%H%x00%B%x00".to_string()];
     args.extend(range.args());
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output = text(&args)?;
+    Ok(log_documents(&text(&args)?))
+}
+
+/// `git log --format=%H%x00%B%x00` の出力を、コミット 1 件 1 文書として読む。日本語を含まない
+/// コミットは文書にしない。
+pub fn log_documents(output: &str) -> Vec<Document> {
     let mut documents = Vec::new();
-    for (hash, message) in log_records(&output) {
+    for (hash, message) in log_records(output) {
         let segments = message_segments(message, COMMIT_PATH, Some(hash));
         let document = Document {
             name: commit_name(hash, &segments),
@@ -84,7 +89,7 @@ pub fn commit_documents(range: &CommitRange) -> Result<Vec<Document>> {
         };
         documents.extend(extract::with_japanese(document));
     }
-    Ok(documents)
+    documents
 }
 
 /// 書きかけのコミットメッセージを 1 つの文書にする。日本語を含まなければ文書にしない。

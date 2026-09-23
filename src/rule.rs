@@ -61,7 +61,8 @@ pub enum Layer {
 }
 
 impl Layer {
-    const ALL: [Self; 6] = [
+    /// 層の全体。規則 ID の並びと同じ順。
+    pub const ALL: [Self; 6] = [
         Self::Structure,
         Self::Lexical,
         Self::Density,

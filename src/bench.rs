@@ -1,8 +1,12 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::{fs, io, result};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+use crate::rule::{RuleId, registered};
+use crate::score::{ScoreMode, Total};
 
 /// 較正の集合の書き手。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -130,6 +134,83 @@ impl Manifest {
     pub fn sets(&self) -> &[Set] {
         &self.sets
     }
+}
+
+/// 集合 1 つの採点結果。
+#[derive(Debug, Clone, Serialize)]
+pub struct SetScore {
+    name: String,
+    side: Side,
+    total: Total,
+    /// 規則ごとの 1000 字あたりの件数。一覧にあるすべての規則を持つ。
+    by_rule_per_1000: BTreeMap<RuleId, f64>,
+}
+
+/// 較正の全体の結果。
+#[derive(Debug, Clone, Serialize)]
+pub struct BenchReport {
+    sets: Vec<SetScore>,
+}
+
+impl SetScore {
+    /// 集合の文書を合算した集計から、集合の結果を作る。
+    pub fn new(set: &Set, total: Total) -> Self {
+        Self {
+            name: set.name.clone(),
+            side: set.side,
+            by_rule_per_1000: per_1000(&total),
+            total,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn side(&self) -> Side {
+        self.side
+    }
+
+    pub fn total(&self) -> &Total {
+        &self.total
+    }
+
+    pub fn by_rule_per_1000(&self) -> &BTreeMap<RuleId, f64> {
+        &self.by_rule_per_1000
+    }
+
+    /// 正規化した点。日本語の文字数が下限未満の集合は持たない。
+    pub fn point(&self) -> Option<f64> {
+        match self.total.mode() {
+            ScoreMode::Normalized { per_1000, .. } => Some(*per_1000),
+            ScoreMode::CountOnly => None,
+        }
+    }
+}
+
+impl BenchReport {
+    pub fn new(sets: Vec<SetScore>) -> Self {
+        Self { sets }
+    }
+
+    pub fn sets(&self) -> &[SetScore] {
+        &self.sets
+    }
+}
+
+/// 一覧にあるすべての規則の、1000 字あたりの件数。
+fn per_1000(total: &Total) -> BTreeMap<RuleId, f64> {
+    registered()
+        .into_iter()
+        .map(|(rule, _)| {
+            let count = total.by_rule().get(&rule).copied().unwrap_or_default();
+            let rate = match total.ja_chars() {
+                0 => 0.0,
+                ja_chars => count as f64 * 1000.0 / ja_chars as f64,
+            };
+            (rule, rate)
+        })
+        .collect()
 }
 
 #[cfg(test)]
