@@ -107,7 +107,7 @@ mod tests {
     use crate::rule::harness;
 
     fn excerpts(text: &str) -> Vec<String> {
-        harness::excerpts_with(&UnfoundedHedge, &harness::polite_context(1.0), text)
+        harness::polite_excerpts(&UnfoundedHedge, text)
     }
 
     #[test]
@@ -135,11 +135,14 @@ mod tests {
 
     #[test]
     fn a_plain_document_is_outside_the_rule() {
-        let context = harness::polite_context(0.49);
-        assert!(
-            harness::excerpts_with(&UnfoundedHedge, &context, "壊れるかもしれない。").is_empty()
-        );
         assert!(harness::excerpts(&UnfoundedHedge, "壊れるかもしれない。").is_empty());
+        assert!(
+            harness::excerpts(
+                &UnfoundedHedge,
+                "規則を数えます。壊れるかもしれない。壊れるかもしれない。"
+            )
+            .is_empty()
+        );
     }
 
     #[test]

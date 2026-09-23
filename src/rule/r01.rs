@@ -32,7 +32,7 @@ mod tests {
     use crate::rule::harness;
 
     fn excerpts(text: &str) -> Vec<String> {
-        harness::excerpts_with(&Colloquialism, &harness::polite_context(1.0), text)
+        harness::polite_excerpts(&Colloquialism, text)
     }
 
     #[test]
@@ -59,9 +59,14 @@ mod tests {
 
     #[test]
     fn a_plain_document_is_outside_the_rule() {
-        let context = harness::polite_context(0.49);
-        assert!(harness::excerpts_with(&Colloquialism, &context, "ちょっと直す。").is_empty());
         assert!(harness::excerpts(&Colloquialism, "ちょっと直す。").is_empty());
+        assert!(
+            harness::excerpts(
+                &Colloquialism,
+                "規則を数えます。ちょっと直す。ちょっと直す。"
+            )
+            .is_empty()
+        );
     }
 
     #[test]

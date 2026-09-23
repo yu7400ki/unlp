@@ -141,14 +141,16 @@ fn is_suru(token: Option<&Token>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rule::harness::{self, CONTEXT};
+    use crate::rule::harness;
 
     fn excerpts(text: &str) -> Vec<String> {
         harness::excerpts(&InanimateSpeaker, text)
     }
 
-    fn excerpts_with(context: &Context, text: &str) -> Vec<String> {
-        harness::excerpts_with(&InanimateSpeaker, context, text)
+    /// 語リストの `person` から語を 1 つ外して適用した抜粋。
+    fn excerpts_without(text: &str, word: &str) -> Vec<String> {
+        let context = harness::context(text).without_word(ID, PERSON, word);
+        harness::excerpts_with(&InanimateSpeaker, &context, text)
     }
 
     #[test]
@@ -174,9 +176,8 @@ mod tests {
         assert!(excerpts("田中さんが教えてくれた。").is_empty());
         assert!(excerpts("家康が訴える。").is_empty());
 
-        let context = CONTEXT.without_word(ID, PERSON, "者");
         assert_eq!(
-            excerpts_with(&context, "利用者が述べる。"),
+            excerpts_without("利用者が述べる。", "者"),
             ["利用者が述べる"]
         );
     }

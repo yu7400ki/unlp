@@ -75,14 +75,6 @@ mod tests {
     }
 
     #[test]
-    fn a_context_without_the_measurement_is_not_judged() {
-        assert!(
-            harness::document_excerpts_with(&FinalWagoRatio, &harness::CONTEXT, &document(5, 0))
-                .is_empty()
-        );
-    }
-
-    #[test]
     fn a_ratio_within_the_threshold_is_not_a_finding() {
         assert!(excerpts(&document(7, 3)).is_empty());
         assert!(excerpts(&document(3, 7)).is_empty());

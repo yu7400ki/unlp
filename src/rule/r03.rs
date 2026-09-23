@@ -65,14 +65,6 @@ mod tests {
     }
 
     #[test]
-    fn a_context_without_the_measurement_is_not_judged() {
-        assert!(
-            harness::document_excerpts_with(&MixedRegister, &harness::CONTEXT, &document(5, 5))
-                .is_empty()
-        );
-    }
-
-    #[test]
     fn a_document_of_one_register_is_not_a_finding() {
         assert!(excerpts(&document(10, 0)).is_empty());
         assert!(excerpts(&document(0, 10)).is_empty());

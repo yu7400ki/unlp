@@ -18,8 +18,8 @@ pub struct Measures {
     pub ga_per_sentence: Option<f64>,
 }
 
-/// 文書 1 つの計測。規則と出力はここから値を読み、計測をやり直さない。
-#[derive(Debug, Clone, Default)]
+/// 文書 1 つの計測。
+#[derive(Debug, Clone)]
 pub struct Measurement {
     measures: Measures,
     final_predicates: FinalPredicates,
@@ -50,18 +50,6 @@ impl Measurement {
     /// 文末の述語の集計。
     pub fn final_predicates(&self) -> &FinalPredicates {
         &self.final_predicates
-    }
-
-    /// 敬体率だけを持つ計測。
-    #[cfg(test)]
-    pub(crate) fn of_polite_ratio(ratio: f64) -> Self {
-        Self {
-            measures: Measures {
-                polite_ratio: Some(ratio),
-                ..Measures::default()
-            },
-            final_predicates: FinalPredicates::default(),
-        }
     }
 }
 

@@ -7,7 +7,6 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use unlp::extract::{self, STDIN_NAME};
 use unlp::input;
-use unlp::measure::Measurement;
 use unlp::morph::Analyzer;
 use unlp::score::{DEFAULT_FLOOR, DocumentScore, Report, Score, ScoreMode, Total};
 use unlp::{Document, Finding, Layer, rule};
@@ -81,10 +80,9 @@ fn main() -> ExitCode {
 
 fn run() -> Result<bool> {
     let cli = Cli::parse();
-    let context = rule::Context::defaults();
     let documents = match &cli.command {
         Command::Rules => {
-            print_rules(&context);
+            print_rules();
             return Ok(false);
         }
         Command::Check { paths } => check(paths)?,
@@ -99,22 +97,20 @@ fn run() -> Result<bool> {
     let mut scores = Vec::new();
     for document in &documents {
         let sentences = analyzer.analyze_document(document);
-        let measurement = Measurement::of(&sentences);
-        let measures = measurement.measures().clone();
-        let context = context.for_document(measurement);
+        let context = rule::Context::for_document(&sentences);
         let findings = rule::check(&sentences, &context, DEFAULT_FLOOR);
         scores.push(DocumentScore {
             name: document.name.clone(),
             score: Score::new(
                 &sentences,
                 findings,
-                measures,
+                context.measures().clone(),
                 DEFAULT_FLOOR,
                 context.weights(),
             ),
         });
     }
-    let mut report = Report::new(scores, DEFAULT_FLOOR, context.weights());
+    let mut report = Report::new(scores, DEFAULT_FLOOR, rule::default_weights());
     if cli.options.summary {
         report.forget_findings();
     }
@@ -182,10 +178,9 @@ fn print_findings(findings: &[Finding]) {
 }
 
 /// 規則の ID、層、重み、規則集の見出しを 1 行ずつ出力する。
-fn print_rules(context: &rule::Context) {
+fn print_rules() {
     for (rule, anchor) in rule::registered() {
-        let weight = context
-            .weights()
+        let weight = rule::default_weights()
             .get(&rule)
             .copied()
             .expect("一覧にある規則には既定の重みがある");

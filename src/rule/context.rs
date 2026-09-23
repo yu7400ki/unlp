@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::LazyLock;
 
 use crate::measure::{FinalPredicates, Measurement, Measures};
 use crate::rule::{Layer, RuleId};
+use crate::sentence::Sentence;
 
 const WEIGHTS: &str = include_str!("../../data/weights.toml");
 
@@ -49,6 +51,20 @@ const POLITE: f64 = 0.5;
 
 static EMPTY: WordList = WordList(BTreeMap::new());
 
+static DEFAULT_WEIGHTS: LazyLock<BTreeMap<RuleId, f64>> = LazyLock::new(|| weights(WEIGHTS));
+
+static DEFAULT_LISTS: LazyLock<BTreeMap<RuleId, WordList>> = LazyLock::new(|| {
+    LISTS
+        .into_iter()
+        .map(|(rule, source)| (rule, word_list(source)))
+        .collect()
+});
+
+/// 同梱した既定の、規則 ID ごとの指摘 1 件の重み。
+pub fn default_weights() -> &'static BTreeMap<RuleId, f64> {
+    &DEFAULT_WEIGHTS
+}
+
 /// 規則が照合する語。欄の名前ごとに語を保持する。
 #[derive(Debug, Clone, Default)]
 pub struct WordList(BTreeMap<String, BTreeSet<String>>);
@@ -74,15 +90,12 @@ pub struct Context {
 }
 
 impl Context {
-    /// 同梱した既定の重みと語リストを読み込む。
-    pub fn defaults() -> Self {
+    /// 文書の文の列を計測し、同梱した既定の重みと語リストを添える。
+    pub fn for_document(sentences: &[Sentence]) -> Self {
         Self {
-            weights: weights(WEIGHTS),
-            lists: LISTS
-                .into_iter()
-                .map(|(rule, source)| (rule, word_list(source)))
-                .collect(),
-            measurement: Measurement::default(),
+            weights: DEFAULT_WEIGHTS.clone(),
+            lists: DEFAULT_LISTS.clone(),
+            measurement: Measurement::of(sentences),
         }
     }
 
@@ -111,14 +124,6 @@ impl Context {
         self.measures()
             .polite_ratio
             .is_some_and(|ratio| ratio >= POLITE)
-    }
-
-    /// 文書の計測を持たせた Context。
-    pub fn for_document(&self, measurement: Measurement) -> Self {
-        Self {
-            measurement,
-            ..self.clone()
-        }
     }
 
     /// 語リストから語を 1 つ外した Context。
@@ -155,26 +160,29 @@ fn word_list(source: &str) -> WordList {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rule::registered;
+    use crate::rule::{harness, registered};
 
-    /// 敬体率だけを計測した Context。
-    fn polite(ratio: f64) -> Context {
-        Context::defaults().for_document(Measurement::of_polite_ratio(ratio))
+    /// 敬体の文を `polite` 文、常体の文を `plain` 文並べた文書の Context。
+    fn document(polite: usize, plain: usize) -> Context {
+        harness::context(&format!(
+            "{}{}",
+            "規則を数えます。".repeat(polite),
+            "規則を数える。".repeat(plain)
+        ))
     }
 
     #[test]
     fn the_defaults_weigh_every_registered_rule() {
-        let context = Context::defaults();
-        assert_eq!(context.weights().len(), 22);
+        assert_eq!(default_weights().len(), 22);
         for (rule, _) in registered() {
-            assert!(context.weights().contains_key(&rule), "{rule}");
+            assert!(default_weights().contains_key(&rule), "{rule}");
         }
-        assert_eq!(context.weights()[&RuleId::new(Layer::Structure, 1)], 3.0);
+        assert_eq!(default_weights()[&RuleId::new(Layer::Structure, 1)], 3.0);
     }
 
     #[test]
     fn the_defaults_carry_the_words_of_the_rules() {
-        let context = Context::defaults();
+        let context = document(0, 1);
         let list = context.list(RuleId::new(Layer::Structure, 1));
         assert!(list.contains("person", "利用者"));
         assert!(list.contains("speech", "述べる"));
@@ -184,7 +192,7 @@ mod tests {
 
     #[test]
     fn the_words_of_a_group_are_read_back() {
-        let context = Context::defaults();
+        let context = document(0, 1);
         let list = context.list(RuleId::new(Layer::Structure, 3));
         assert!(list.words("phrases").any(|word| word == "つまり、"));
         assert_eq!(list.words("speech").count(), 0);
@@ -192,31 +200,30 @@ mod tests {
 
     #[test]
     fn a_rule_without_words_gets_an_empty_list() {
-        let context = Context::defaults();
         assert!(
-            !context
+            !document(0, 1)
                 .list(RuleId::new(Layer::Goshu, 1))
                 .contains("person", "利用者")
         );
     }
 
     #[test]
-    fn a_document_is_plain_until_its_polite_ratio_is_measured() {
-        let context = Context::defaults();
-        assert!(!context.is_polite());
+    fn a_document_without_a_full_stop_is_plain() {
+        let context = harness::context("見出しだ\n");
         assert_eq!(context.measures().polite_ratio, None);
-        assert_eq!(context.final_predicates().total(), 0);
+        assert!(!context.is_polite());
     }
 
     #[test]
     fn the_polite_ratio_decides_the_register_of_the_document() {
-        assert!(polite(POLITE).is_polite());
-        assert!(!polite(POLITE - 0.01).is_polite());
+        assert_eq!(document(1, 1).measures().polite_ratio, Some(POLITE));
+        assert!(document(1, 1).is_polite());
+        assert!(!document(2, 3).is_polite());
     }
 
     #[test]
     fn the_measurement_of_a_document_keeps_the_words_and_the_weights() {
-        let context = polite(0.75);
+        let context = document(3, 1);
         assert_eq!(context.measures().polite_ratio, Some(0.75));
         assert!(
             context

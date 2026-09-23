@@ -37,7 +37,7 @@ mod s05;
 mod s06;
 mod surface;
 
-pub use context::{Context, WordList};
+pub use context::{Context, WordList, default_weights};
 
 /// 規則集。
 const RULES: &str = include_str!("../skills/unlp/reference/rules.md");
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn every_weighted_rule_has_a_heading() {
-        for rule in Context::defaults().weights().keys() {
+        for rule in default_weights().keys() {
             assert!(doc_heading(&rule.to_string()).is_some(), "{rule}");
         }
     }
