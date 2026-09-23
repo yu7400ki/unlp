@@ -61,6 +61,10 @@ impl Repo {
         fs::write(path, text).unwrap();
     }
 
+    fn read(&self, name: &str) -> String {
+        fs::read_to_string(self.path().join(name)).unwrap()
+    }
+
     fn commit(&self, message: &str) {
         let file = self.path().join(".git").join("MSG");
         fs::write(&file, message).unwrap();
@@ -182,6 +186,7 @@ fn repo_with_staged_change() -> Repo {
     repo.git(&["add", "."]);
     repo
 }
+
 #[test]
 fn commits_score_the_messages_without_the_trailers() {
     let repo = Repo::new();
@@ -291,4 +296,53 @@ fn the_commit_msg_hook_stops_a_message_with_a_finding() {
         .args(["hook", "commit-msg", ".git/MESSAGE"])
         .assert()
         .success();
+}
+
+#[test]
+fn installing_the_hook_twice_leaves_the_same_file() {
+    let repo = Repo::new();
+    repo.unlp().args(["hook", "install"]).assert().success();
+    let first = repo.read(".git/hooks/commit-msg");
+    repo.unlp().args(["hook", "install"]).assert().success();
+    assert_eq!(repo.read(".git/hooks/commit-msg"), first);
+    assert!(first.contains("unlp hook commit-msg"), "{first}");
+}
+
+#[test]
+fn installing_the_hook_leaves_another_hook_alone() {
+    let repo = Repo::new();
+    let other = "#!/bin/sh\necho 別の hook\n";
+    repo.write(".git/hooks/commit-msg", other);
+
+    repo.unlp().args(["hook", "install"]).assert().code(1);
+    assert_eq!(repo.read(".git/hooks/commit-msg"), other);
+
+    repo.unlp()
+        .args(["hook", "install", "--force"])
+        .assert()
+        .success();
+    assert!(
+        repo.read(".git/hooks/commit-msg")
+            .contains("unlp hook commit-msg"),
+        "{}",
+        repo.read(".git/hooks/commit-msg")
+    );
+}
+
+#[test]
+fn uninstalling_removes_only_the_hook_it_installed() {
+    let repo = Repo::new();
+    repo.unlp().args(["hook", "uninstall"]).assert().success();
+
+    let other = "#!/bin/sh\necho 別の hook\n";
+    repo.write(".git/hooks/commit-msg", other);
+    repo.unlp().args(["hook", "uninstall"]).assert().success();
+    assert_eq!(repo.read(".git/hooks/commit-msg"), other);
+
+    repo.unlp()
+        .args(["hook", "install", "--force"])
+        .assert()
+        .success();
+    repo.unlp().args(["hook", "uninstall"]).assert().success();
+    assert!(!repo.path().join(".git/hooks/commit-msg").exists());
 }

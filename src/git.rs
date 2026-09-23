@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::{io, result};
+use std::{fs, io, result};
 
 use thiserror::Error;
 
@@ -33,6 +33,18 @@ pub enum Error {
     Failed { command: String, message: String },
     #[error("git {command} の出力が UTF-8 で符号化されていない")]
     NotUtf8 { command: String },
+    #[error("{} を読み込めない", path.display())]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{} を書き込めない", path.display())]
+    Write {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -346,6 +358,97 @@ fn line_number(at: usize) -> NonZeroU32 {
     NonZeroU32::new(number).unwrap_or(NonZeroU32::MIN)
 }
 
+/// `commit-msg` hook の設置の結果。
+#[derive(Debug)]
+pub enum Install {
+    /// 設置した hook のパス。
+    Written(PathBuf),
+    /// 目印を持たないファイルがあるため設置しなかった。
+    Blocked(PathBuf),
+}
+
+/// `commit-msg` hook を設置する。目印を持つファイルは同じ内容で上書きし、目印を持たない
+/// ファイルは `force` を指定したときだけ置き換える。
+pub fn install_hook(force: bool) -> Result<Install> {
+    let path = hook_path()?;
+    if let Some(existing) = read_hook(&path)?
+        && !existing.contains(MARKER)
+        && !force
+    {
+        return Ok(Install::Blocked(path));
+    }
+    write_hook(&path)?;
+    Ok(Install::Written(path))
+}
+
+/// 目印を持つ `commit-msg` hook を除去する。除去したパスを返し、無ければ `None`。
+pub fn uninstall_hook() -> Result<Option<PathBuf>> {
+    let path = hook_path()?;
+    match read_hook(&path)? {
+        Some(existing) if existing.contains(MARKER) => {
+            fs::remove_file(&path).map_err(|source| Error::Write {
+                path: path.clone(),
+                source,
+            })?;
+            Ok(Some(path))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// `unlp` が設置した hook を示す目印。
+const MARKER: &str = "# unlp hook";
+
+/// 設置する hook の内容。
+fn hook_script() -> String {
+    format!("#!/bin/sh\n{MARKER}\nexec unlp hook commit-msg \"$@\"\n")
+}
+
+fn hook_path() -> Result<PathBuf> {
+    let hooks = text(&["rev-parse", "--git-path", "hooks"])?;
+    Ok(Path::new(hooks.trim()).join("commit-msg"))
+}
+
+fn read_hook(path: &Path) -> Result<Option<String>> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(String::from_utf8_lossy(&bytes).into_owned())),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(Error::Read {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+fn write_hook(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| Error::Write {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    fs::write(path, hook_script()).map_err(|source| Error::Write {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    make_executable(path)
+}
+
+#[cfg(unix)]
+fn make_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).map_err(|source| Error::Write {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
 /// git を実行し、標準出力を返す。
 fn run(args: &[&str]) -> Result<Vec<u8>> {
     let output = Command::new("git")
@@ -519,6 +622,17 @@ mod tests {
         assert_eq!(
             ranges,
             [("a.md", vec![(2, 2), (4, 4)]), ("b.md", vec![(1, 1)])]
+        );
+    }
+
+    #[test]
+    fn the_script_of_the_hook_carries_the_marker() {
+        let script = hook_script();
+        assert!(script.starts_with("#!/bin/sh\n"), "{script}");
+        assert!(script.contains(MARKER), "{script}");
+        assert!(
+            script.contains("exec unlp hook commit-msg \"$@\""),
+            "{script}"
         );
     }
 

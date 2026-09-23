@@ -65,6 +65,14 @@ enum Command {
 enum HookCommand {
     /// メッセージのファイルと索引に載せた差分をまとめて検査する
     CommitMsg { file: PathBuf },
+    /// git の commit-msg hook を設置する
+    Install {
+        /// 目印を持たない hook を置き換える
+        #[arg(long)]
+        force: bool,
+    },
+    /// 設置した commit-msg hook を除去する
+    Uninstall,
 }
 
 /// 入力を抽出する書式。
@@ -124,6 +132,13 @@ fn run() -> Result<bool> {
         }
         Command::Hook { command } => match command {
             HookCommand::CommitMsg { file } => commit_msg_documents(file)?,
+            HookCommand::Install { force } => return install_hook(*force),
+            HookCommand::Uninstall => {
+                if let Some(path) = git::uninstall_hook()? {
+                    println!("{} を除去した", path.display());
+                }
+                return Ok(false);
+            }
         },
     };
 
@@ -165,6 +180,20 @@ fn default_fail_over(command: &Command) -> Option<f64> {
             command: HookCommand::CommitMsg { .. },
         } => Some(DEFAULT_THRESHOLD),
         _ => None,
+    }
+}
+
+/// hook を設置し、目印を持たないファイルがあれば置き換えずに知らせる。
+fn install_hook(force: bool) -> Result<bool> {
+    match git::install_hook(force)? {
+        git::Install::Written(path) => {
+            println!("{} を設置した", path.display());
+            Ok(false)
+        }
+        git::Install::Blocked(path) => {
+            eprintln!("{} が既にある。--force で置き換える", path.display());
+            Ok(true)
+        }
     }
 }
 
