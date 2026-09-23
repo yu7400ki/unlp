@@ -571,3 +571,15 @@ fn a_file_out_of_the_supported_kinds_is_skipped_with_a_warning() {
     assert!(stderr.contains("警告"), "{stderr}");
     assert!(stderr.contains("a.toml"), "{stderr}");
 }
+
+#[test]
+fn a_blank_comment_line_breaks_the_run_of_short_sentences() {
+    let filler = "/// この文はここでは十分に長く書いてある一文だ。\n".repeat(15);
+    let source = format!(
+        "{filler}mod a {{}}\n\n/// 窓が開く。鍵が回る。\n///\n/// 値が減る。\nmod b {{}}\n"
+    );
+    let report = check_source("a.rs", &source);
+    let score = &report["documents"][0]["score"];
+    assert_eq!(score["mode"]["kind"], "normalized", "{score}");
+    assert!(score["by_rule"]["D01"].is_null(), "{score}");
+}

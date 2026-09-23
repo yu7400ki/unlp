@@ -253,12 +253,17 @@ fn strip_marker(line: &str) -> &str {
     }
 }
 
-/// 行を連ねる。境目の両側が非 ASCII の文字なら詰め、そうでなければ空白 1 つを挟む。
+/// 行を連ねる。本文の無い行は段落の区切りとして改行を残し、他の行は境目の両側が非 ASCII の
+/// 文字なら詰め、そうでなければ空白 1 つを挟む。
 fn join(body: &mut String, line: &str) {
     if line.is_empty() {
+        if !body.is_empty() && !body.ends_with('\n') {
+            body.push('\n');
+        }
         return;
     }
     let glued = body.is_empty()
+        || body.ends_with('\n')
         || (body.ends_with(|c: char| !c.is_ascii()) && line.starts_with(|c: char| !c.is_ascii()));
     if !glued {
         body.push(' ');
@@ -306,8 +311,10 @@ fn outermost(mut parts: Vec<Part>) -> Vec<Part> {
 fn segments(parts: Vec<Part>, name: &str, lines: &Lines) -> Vec<Segment> {
     let mut segments: Vec<Segment> = Vec::new();
     for part in parts {
+        let mut text = part.body;
+        text.truncate(text.trim_end().len());
         segments.push(Segment {
-            text: part.body,
+            text,
             origin: Origin {
                 path: name.to_string(),
                 lines: lines.of(&part.range),
@@ -453,6 +460,22 @@ mod tests {
                 "# 一行目だ。\n# 二行目だ。\ns = 1\n# 離れた行だ。\n"
             ),
             ["一行目だ。二行目だ。", "離れた行だ。"]
+        );
+    }
+
+    #[test]
+    fn a_comment_line_without_a_body_is_a_paragraph_break() {
+        assert_eq!(
+            texts("a.rs", "/// 窓が開く。\n///\n/// 値が減る。\nmod a {}\n"),
+            ["窓が開く。\n値が減る。"]
+        );
+        assert_eq!(
+            texts("a.rs", "/* 一段目だ。\n *\n * 二段目だ。\n */\nmod a {}\n"),
+            ["一段目だ。\n二段目だ。"]
+        );
+        assert_eq!(
+            texts("a.py", "# 一段目だ。\n#\n# 二段目だ。\n"),
+            ["一段目だ。\n二段目だ。"]
         );
     }
 
