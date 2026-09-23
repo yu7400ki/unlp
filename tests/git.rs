@@ -385,6 +385,24 @@ fn a_range_of_commits_yields_the_diff_of_the_range() {
 }
 
 #[test]
+fn a_single_rev_is_the_change_of_that_commit() {
+    let repo = repo_with_staged_change();
+    let staged = json(repo.unlp().args(["diff", "--staged", "--json"]));
+    repo.commit("chore: 変更を記録する\n");
+    repo.write(
+        "doc.md",
+        &format!("{DOC_AFTER}\n作業ツリーだけの段落だ。\n"),
+    );
+
+    let single = json(repo.unlp().args(["diff", "HEAD", "--json"]));
+    assert_eq!(
+        without_commits(single.clone()),
+        without_commits(staged),
+        "{single}"
+    );
+}
+
+#[test]
 fn the_commit_msg_hook_stops_a_message_with_a_finding() {
     let repo = repo_with_staged_change();
     repo.write(".git/MESSAGE", "型の doc が名乗る。\n");

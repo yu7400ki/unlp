@@ -114,37 +114,55 @@ pub enum Diff {
 
 /// 差分が追加・変更した行に触れる Segment だけを持つ、ファイルごとの文書。索引または範囲の
 /// 右端のリビジョンにあるファイル全体を抽出し、触れていない Segment を落とす。抽出の書式を
-/// 定めていない種類と、UTF-8 で符号化されていないファイルは飛ばす。
+/// 定めていない種類と、UTF-8 で符号化されていないファイルは飛ばす。作業ツリーは参照しない。
 pub fn diff_documents(diff: &Diff) -> Result<Vec<Document>> {
     let mut args = vec!["diff", "-U0", "--diff-filter=AM"];
     args.extend(DIFF_OPTIONS);
-    let rev = match diff {
+    let range = match diff {
         Diff::Staged => {
             args.push("--cached");
             None
         }
-        Diff::Range(spec) => {
-            args.push(spec);
-            Some(right_rev(spec))
-        }
+        Diff::Range(spec) => Some(diff_range(spec)),
     };
+    if let Some(range) = &range {
+        args.push(&range.spec);
+    }
     let output = text(&args)?;
-    let commit = match &rev {
+    let rev = range.as_ref().map(|range| range.rev.as_str());
+    let commit = match rev {
         Some(rev) => Some(text(&["rev-parse", rev])?.trim().to_string()),
         None => None,
     };
     let mut documents = Vec::new();
     for change in changes(&output) {
-        documents.extend(change_document(&change, rev.as_deref(), commit.as_deref())?);
+        documents.extend(change_document(&change, rev, commit.as_deref())?);
     }
     Ok(documents)
 }
 
-/// 範囲の右端のリビジョン。範囲でなければ `HEAD`。
-fn right_rev(spec: &str) -> String {
+/// git に渡す範囲と、ファイルの内容を読むリビジョン。
+struct DiffRange {
+    spec: String,
+    rev: String,
+}
+
+/// 範囲の指定を、両端を持つ範囲と内容のリビジョンに分ける。単一の rev はそのコミットが
+/// 加えた変更（`<rev>~1..<rev>`）とする。
+fn diff_range(spec: &str) -> DiffRange {
     match spec.rsplit_once("..") {
-        Some((_, right)) if !right.is_empty() => right.to_string(),
-        _ => HEAD.to_string(),
+        Some((_, right)) if !right.is_empty() => DiffRange {
+            spec: spec.to_string(),
+            rev: right.to_string(),
+        },
+        Some(_) => DiffRange {
+            spec: spec.to_string(),
+            rev: HEAD.to_string(),
+        },
+        None => DiffRange {
+            spec: format!("{spec}~1..{spec}"),
+            rev: spec.to_string(),
+        },
     }
 }
 
@@ -667,11 +685,24 @@ mod tests {
 
     #[test]
     fn the_right_side_of_the_range_holds_the_contents() {
-        assert_eq!(right_rev("HEAD~1..HEAD"), "HEAD");
-        assert_eq!(right_rev("main..topic"), "topic");
-        assert_eq!(right_rev("main...topic"), "topic");
-        assert_eq!(right_rev("HEAD~2.."), "HEAD");
-        assert_eq!(right_rev("HEAD~2"), "HEAD");
+        let range = |spec: &str| {
+            let range = diff_range(spec);
+            (range.spec, range.rev)
+        };
+        assert_eq!(
+            range("HEAD~1..HEAD"),
+            ("HEAD~1..HEAD".into(), "HEAD".into())
+        );
+        assert_eq!(range("main..topic"), ("main..topic".into(), "topic".into()));
+        assert_eq!(
+            range("main...topic"),
+            ("main...topic".into(), "topic".into())
+        );
+        assert_eq!(range("HEAD~2.."), ("HEAD~2..".into(), "HEAD".into()));
+        assert_eq!(
+            range("HEAD~2"),
+            ("HEAD~2~1..HEAD~2".into(), "HEAD~2".into())
+        );
     }
 
     #[test]
