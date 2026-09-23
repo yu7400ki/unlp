@@ -258,17 +258,20 @@ fn commit_msg_documents(file: &Path, settings: &Settings) -> Result<Vec<Document
     Ok(documents)
 }
 
-/// 対象のパスを展開し、日本語を含むファイルを文書にする。設定が除外するファイルは飛ばす。
-/// 抽出の書式を定めていない種類は、明示されたパスなら警告し、走査で見つかったファイルは黙って
-/// 飛ばす。UTF-8 でないファイルは警告して飛ばす。
+/// 対象のパスを展開し、日本語を含むファイルを文書にする。設定が除外するファイルと抽出の書式を
+/// 定めていない種類は、明示されたパスなら警告し、走査で見つかったファイルは黙って飛ばす。
+/// UTF-8 でないファイルは警告して飛ばす。
 fn check(paths: &[PathBuf], settings: &Settings) -> Result<Vec<Document>> {
     let mut documents = Vec::new();
     for path in paths {
         for file in input::collect_files(path)? {
+            let named = file == *path;
             if settings.excludes(&file) {
+                if named {
+                    eprintln!("警告: {} は除外の対象", file.display());
+                }
                 continue;
             }
-            let named = file == *path;
             match input::read_document(&file) {
                 Ok(input::Reading::Document(document)) => documents.push(document),
                 Ok(input::Reading::NoJapanese) => {}

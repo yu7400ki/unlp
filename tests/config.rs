@@ -207,3 +207,18 @@ fn an_excluded_path_named_on_the_command_line_is_skipped() {
     assert!(names(&report).is_empty(), "{report}");
     assert_eq!(report["total"]["ja_chars"], 0, "{report}");
 }
+
+#[test]
+fn an_excluded_path_named_on_the_command_line_is_warned() {
+    let dir = dir_with("exclude = [\"b.txt\"]\n", &[("b.txt", "除かれる文だ。")]);
+    unlp(dir.path())
+        .args(["check", "b.txt"])
+        .assert()
+        .success()
+        .stderr(contains("b.txt は除外の対象"));
+    unlp(dir.path())
+        .args(["check", "."])
+        .assert()
+        .success()
+        .stderr("");
+}
