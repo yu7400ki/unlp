@@ -71,6 +71,9 @@ pub fn source_document(name: String, text: &str, lang: SourceLang) -> Document {
     for (kind, face) in kinds {
         let matcher = KindMatcher::new(kind, lang);
         for node in root.root().find_all(&matcher) {
+            if lang == SupportLang::Rust && in_test_item(&node) {
+                continue;
+            }
             parts.push(Part {
                 range: node.range(),
                 face: *face,
@@ -84,6 +87,31 @@ pub fn source_document(name: String, text: &str, lang: SourceLang) -> Document {
         name: name.clone(),
         segments: segments(merged(outermost(parts), &lines), &name, &lines),
     }
+}
+
+/// `#[cfg(test)]` が付いた項目の中にあるノードか。
+fn in_test_item(node: &Node<StrDoc<SupportLang>>) -> bool {
+    let mut item = node.parent();
+    while let Some(current) = item {
+        if is_test_item(&current) {
+            return true;
+        }
+        item = current.parent();
+    }
+    false
+}
+
+/// 直前に並ぶ属性に `cfg(test)` を持つ項目か。
+fn is_test_item(item: &Node<StrDoc<SupportLang>>) -> bool {
+    item.prev_all()
+        .take_while(|sibling| sibling.kind() == "attribute_item")
+        .any(|attribute| {
+            attribute
+                .text()
+                .split_whitespace()
+                .collect::<String>()
+                .contains("cfg(test)")
+        })
 }
 
 /// Segment になる前の 1 つのノード。
@@ -722,6 +750,25 @@ mod tests {
         let lines = document.segments[0].origin.lines;
         assert_eq!((lines.start().get(), lines.end().get()), (2, 2));
         assert_eq!(document.segments[0].origin.path, "a.rs");
+    }
+
+    #[test]
+    fn a_node_inside_a_test_item_is_not_a_segment() {
+        assert!(
+            texts(
+                "a.rs",
+                "#[cfg(test)]\nmod tests {\n    /// 説明。\n    fn f() { let s = \"例文だ。\"; }\n}\n"
+            )
+            .is_empty()
+        );
+        assert!(texts("a.rs", "#[cfg(test)]\nfn f() { let s = \"例文だ。\"; }\n").is_empty());
+        assert_eq!(
+            texts(
+                "a.rs",
+                "mod real {\n    /// 説明。\n    fn f() { let s = \"例文だ。\"; }\n}\n"
+            ),
+            ["説明。", "例文だ。"]
+        );
     }
 
     #[test]
