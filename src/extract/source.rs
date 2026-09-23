@@ -66,22 +66,94 @@ pub fn source_document(name: String, text: &str, lang: SourceLang) -> Document {
         for node in root.root().find_all(&matcher) {
             parts.push(Part {
                 range: node.range(),
+                face: *face,
                 kind: segment_kind(lang, &node, *face),
-                body: node.text().to_string(),
+                body: body(&node.text(), *face),
             });
         }
     }
+    let lines = Lines::new(text);
     Document {
         name: name.clone(),
-        segments: segments(outermost(parts), &name, &Lines::new(text)),
+        segments: segments(merged(outermost(parts), &lines), &name, &lines),
     }
 }
 
 /// Segment になる前の 1 つのノード。
 struct Part {
     range: Range<usize>,
+    face: Face,
     kind: SegmentKind,
     body: String,
+}
+
+/// ノードの文字列から取り出す本文。
+fn body(text: &str, face: Face) -> String {
+    match face {
+        Face::Comment => comment_body(text),
+        Face::StringLiteral => text.to_string(),
+    }
+}
+
+/// コメントの記号を除いた本文。行をまたぐコメントは 1 行ずつ記号を除いて連ねる。
+fn comment_body(text: &str) -> String {
+    let inner = match text.strip_prefix("/*") {
+        Some(inner) => inner.strip_suffix("*/").unwrap_or(inner),
+        None => text,
+    };
+    let mut body = String::with_capacity(inner.len());
+    for line in inner.lines() {
+        join(&mut body, strip_marker(line.trim()).trim());
+    }
+    body
+}
+
+/// 行の先頭のコメントの記号を除いた部分。
+fn strip_marker(line: &str) -> &str {
+    if let Some(rest) = line.strip_prefix("//").or_else(|| line.strip_prefix('#')) {
+        let rest = rest.trim_start_matches(['/', '#']);
+        return rest.strip_prefix('!').unwrap_or(rest);
+    }
+    match line.strip_prefix('*') {
+        Some(rest) if rest.is_empty() || rest.starts_with(' ') => rest,
+        _ => line,
+    }
+}
+
+/// 行を連ねる。境目の両側が非 ASCII の文字なら詰め、そうでなければ空白 1 つを挟む。
+fn join(body: &mut String, line: &str) {
+    if line.is_empty() {
+        return;
+    }
+    let glued = body.is_empty()
+        || (body.ends_with(|c: char| !c.is_ascii()) && line.starts_with(|c: char| !c.is_ascii()));
+    if !glued {
+        body.push(' ');
+    }
+    body.push_str(line);
+}
+
+/// 連続する行の同じ面のコメントを 1 つに統合する。
+fn merged(parts: Vec<Part>, lines: &Lines) -> Vec<Part> {
+    let mut merged: Vec<Part> = Vec::new();
+    for part in parts {
+        match merged.last_mut() {
+            Some(last) if continues(last, &part, lines) => {
+                join(&mut last.body, &part.body);
+                last.range.end = part.range.end;
+            }
+            _ => merged.push(part),
+        }
+    }
+    merged
+}
+
+/// 前のコメントの次の行から続くコメントか。
+fn continues(last: &Part, part: &Part, lines: &Lines) -> bool {
+    last.face == Face::Comment
+        && part.face == Face::Comment
+        && last.kind == part.kind
+        && lines.of(&part.range).start().get() == lines.of(&last.range).end().get() + 1
 }
 
 /// 原文の順に並べ、他のノードの内側にあるものを除く。文字列の補間の中の文字列は、外側の
@@ -177,7 +249,9 @@ mod tests {
     fn rust_comments_and_strings_are_segments() {
         let source = concat!(
             "//! 内側の doc だ。\n",
-            "/// 外側の doc だ。\n",
+            "\n",
+            "/// 外側の doc を\n",
+            "/// 二行に分ける。\n",
             "// 行のコメントだ。\n",
             "/* ブロックのコメントだ。 */\n",
             "fn 名前() {\n",
@@ -188,10 +262,9 @@ mod tests {
         assert_eq!(
             texts("a.rs", source),
             [
-                "//! 内側の doc だ。\n",
-                "/// 外側の doc だ。\n",
-                "// 行のコメントだ。",
-                "/* ブロックのコメントだ。 */",
+                "内側の doc だ。",
+                "外側の doc を二行に分ける。",
+                "行のコメントだ。ブロックのコメントだ。",
                 "\"文字列だ。\"",
                 "r#\"生の文字列だ。\"#",
             ]
@@ -202,11 +275,38 @@ mod tests {
                 SegmentKind::DocComment,
                 SegmentKind::DocComment,
                 SegmentKind::Comment,
-                SegmentKind::Comment,
                 SegmentKind::StringLiteral,
                 SegmentKind::StringLiteral,
             ]
         );
+    }
+
+    #[test]
+    fn a_comment_of_several_lines_becomes_one_segment() {
+        assert_eq!(
+            texts("a.rs", "/* 一行目だ。\n * 二行目だ。\n */\n"),
+            ["一行目だ。二行目だ。"]
+        );
+        assert_eq!(
+            texts(
+                "a.py",
+                "# 一行目だ。\n# 二行目だ。\ns = 1\n# 離れた行だ。\n"
+            ),
+            ["一行目だ。二行目だ。", "離れた行だ。"]
+        );
+    }
+
+    #[test]
+    fn a_line_break_beside_an_ascii_word_keeps_a_blank() {
+        assert_eq!(
+            texts("a.rs", "/// 型の名前は\n/// Segment だ。\n"),
+            ["型の名前は Segment だ。"]
+        );
+    }
+
+    #[test]
+    fn the_notation_of_bold_survives_the_comment_marker() {
+        assert_eq!(texts("a.rs", "/// **結論です。**\n"), ["**結論です。**"]);
     }
 
     #[test]
@@ -236,11 +336,11 @@ mod tests {
                 "a.go",
                 "// 説明だ。\nvar x = \"値だ。\"\nvar y = `生の値だ。`\n"
             ),
-            ["// 説明だ。", "\"値だ。\"", "`生の値だ。`"]
+            ["説明だ。", "\"値だ。\"", "`生の値だ。`"]
         );
         assert_eq!(
             texts("a.py", "# 説明だ。\ns = \"値だ。\"\n"),
-            ["# 説明だ。", "\"値だ。\""]
+            ["説明だ。", "\"値だ。\""]
         );
     }
 
