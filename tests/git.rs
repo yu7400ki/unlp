@@ -300,6 +300,78 @@ fn a_deleted_line_that_looks_like_a_header_keeps_the_later_hunks() {
 }
 
 #[test]
+fn a_gitlink_in_the_index_does_not_stop_the_diff() {
+    let repo = repo_with_staged_change();
+    repo.git(&[
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        "160000,0000000000000000000000000000000000000001,sub",
+    ]);
+
+    let report = json(repo.unlp().args(["diff", "--staged", "--json"]));
+    assert_eq!(
+        names(&report),
+        ["doc.md", SPACED_PATH, "src/lib.rs"],
+        "{report}"
+    );
+
+    repo.write(".git/MESSAGE", "chore: 変更を記録する\n");
+    repo.unlp()
+        .args(["hook", "commit-msg", ".git/MESSAGE"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn a_renamed_file_is_scored_as_an_added_one() {
+    let repo = Repo::new();
+    let guide = "初めの段落だ。\n\n次の段落だ。\n\n三つ目の段落だ。\n\n四つ目の段落だ。\n";
+    repo.write("doc.md", guide);
+    repo.git(&["add", "."]);
+    repo.commit("chore: init\n");
+    repo.git(&["mv", "doc.md", "guide.md"]);
+    repo.write("guide.md", &format!("{guide}\n足した段落だ。\n"));
+    repo.git(&["add", "."]);
+    assert!(
+        repo.git(&["diff", "--cached", "--name-status"])
+            .starts_with('R'),
+        "git が改名を検出する差分"
+    );
+
+    let report = json(repo.unlp().args(["diff", "--staged", "--json"]));
+    assert_eq!(names(&report), ["guide.md"], "{report}");
+    assert_eq!(
+        report["total"]["ja_chars"],
+        ja_chars([
+            "初めの段落だ。",
+            "次の段落だ。",
+            "三つ目の段落だ。",
+            "四つ目の段落だ。",
+            "足した段落だ。"
+        ]),
+        "{report}"
+    );
+}
+
+#[test]
+fn an_external_diff_driver_does_not_hide_the_findings() {
+    let repo = Repo::new();
+    repo.write("doc.md", "初めの段落だ。\n");
+    repo.git(&["add", "."]);
+    repo.commit("chore: init\n");
+    repo.git(&["config", "diff.external", "true"]);
+    repo.write("doc.md", "初めの段落だ。\n\n型の doc が名乗る。\n");
+    repo.git(&["add", "."]);
+
+    repo.unlp()
+        .args(["diff", "--staged"])
+        .assert()
+        .success()
+        .stdout(contains("S01"));
+}
+
+#[test]
 fn a_range_of_commits_yields_the_diff_of_the_range() {
     let repo = repo_with_staged_change();
     let staged = json(repo.unlp().args(["diff", "--staged", "--json"]));

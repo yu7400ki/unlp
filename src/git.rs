@@ -91,6 +91,18 @@ pub fn message_document(message: &str) -> Option<Document> {
     extract::with_japanese(document)
 }
 
+/// 利用者の設定に依らない差分の出力にする引数。
+const DIFF_OPTIONS: [&str; 8] = [
+    "--no-color",
+    "--no-renames",
+    "--ignore-submodules",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-relative",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+];
+
 /// 採点する差分の面。
 #[derive(Debug, Clone)]
 pub enum Diff {
@@ -104,14 +116,8 @@ pub enum Diff {
 /// 右端のリビジョンにあるファイル全体を抽出し、触れていない Segment を落とす。抽出の書式を
 /// 定めていない種類と、UTF-8 で符号化されていないファイルは飛ばす。
 pub fn diff_documents(diff: &Diff) -> Result<Vec<Document>> {
-    let mut args = vec![
-        "diff",
-        "-U0",
-        "--diff-filter=AM",
-        "--no-color",
-        "--src-prefix=a/",
-        "--dst-prefix=b/",
-    ];
+    let mut args = vec!["diff", "-U0", "--diff-filter=AM"];
+    args.extend(DIFF_OPTIONS);
     let rev = match diff {
         Diff::Staged => {
             args.push("--cached");
