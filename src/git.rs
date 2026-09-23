@@ -117,10 +117,18 @@ pub enum Diff {
     Range(String),
 }
 
+/// 差分を読んだ結果。
+#[derive(Debug)]
+pub struct Diffed {
+    pub documents: Vec<Document>,
+    /// UTF-8 で符号化されていないため飛ばしたファイルのパス。
+    pub not_utf8: Vec<String>,
+}
+
 /// 差分が追加・変更した行に触れる Segment だけを持つ、ファイルごとの文書。索引または範囲の
 /// 右端のリビジョンにあるファイル全体を抽出し、触れていない Segment を落とす。抽出の書式を
-/// 定めていない種類と、UTF-8 で符号化されていないファイルは飛ばす。作業ツリーは参照しない。
-pub fn diff_documents(diff: &Diff) -> Result<Vec<Document>> {
+/// 定めていない種類は黙って飛ばす。作業ツリーは参照しない。
+pub fn diff_documents(diff: &Diff) -> Result<Diffed> {
     let mut args = vec!["diff", "-U0", "--diff-filter=AM"];
     args.extend(DIFF_OPTIONS);
     let range = match diff {
@@ -133,17 +141,26 @@ pub fn diff_documents(diff: &Diff) -> Result<Vec<Document>> {
     if let Some(range) = &range {
         args.push(&range.spec);
     }
-    let output = text(&args)?;
+    // 差分の本文には UTF-8 で符号化されていないファイルの行が現れる。解析が読む見出しと hunk は
+    // ASCII なので、本文の置換は行範囲に影響しない。
+    let output = lossy(&args)?;
     let rev = range.as_ref().map(|range| range.rev.as_str());
     let commit = match rev {
         Some(rev) => Some(text(&["rev-parse", rev])?.trim().to_string()),
         None => None,
     };
-    let mut documents = Vec::new();
+    let mut diffed = Diffed {
+        documents: Vec::new(),
+        not_utf8: Vec::new(),
+    };
     for change in changes(&output) {
-        documents.extend(change_document(&change, rev, commit.as_deref())?);
+        match change_document(&change, rev, commit.as_deref())? {
+            Changed::Document(document) => diffed.documents.push(document),
+            Changed::Skipped => {}
+            Changed::NotUtf8 => diffed.not_utf8.push(change.path),
+        }
     }
-    Ok(documents)
+    Ok(diffed)
 }
 
 /// git に渡す範囲と、ファイルの内容を読むリビジョン。
@@ -232,27 +249,32 @@ fn added_range(line: &str) -> Option<LineRange> {
     LineRange::new(start, end)
 }
 
+/// 差分の 1 ファイルを読んだ結果。
+enum Changed {
+    Document(Document),
+    /// 抽出の書式を定めていない種類、または日本語を含まない。
+    Skipped,
+    /// UTF-8 で符号化されていない。
+    NotUtf8,
+}
+
 /// 触れた Segment だけを残した 1 ファイルの文書。
-fn change_document(
-    change: &Change,
-    rev: Option<&str>,
-    commit: Option<&str>,
-) -> Result<Option<Document>> {
+fn change_document(change: &Change, rev: Option<&str>, commit: Option<&str>) -> Result<Changed> {
     let path = Path::new(&change.path);
     if !input::has_format(path) {
-        return Ok(None);
+        return Ok(Changed::Skipped);
     }
     let spec = match rev {
         Some(rev) => format!("{rev}:{}", change.path),
         None => format!(":{}", change.path),
     };
     let Some(content) = blob(&spec)? else {
-        return Ok(None);
+        return Ok(Changed::NotUtf8);
     };
     let Reading::Document(mut document) =
         input::extract_document(change.path.clone(), path, &content)
     else {
-        return Ok(None);
+        return Ok(Changed::Skipped);
     };
     document
         .segments
@@ -260,7 +282,10 @@ fn change_document(
     for segment in &mut document.segments {
         segment.origin.commit = commit.map(str::to_string);
     }
-    Ok(extract::with_japanese(document))
+    Ok(match extract::with_japanese(document) {
+        Some(document) => Changed::Document(document),
+        None => Changed::Skipped,
+    })
 }
 
 /// 索引または指定したリビジョンにあるファイルの内容。UTF-8 で符号化されていなければ `None`。
@@ -514,6 +539,11 @@ fn text(args: &[&str]) -> Result<String> {
     String::from_utf8(run(args)?).map_err(|_| Error::NotUtf8 {
         command: args.join(" "),
     })
+}
+
+/// git を実行し、標準出力を UTF-8 として読む。符号化されていないバイトは置換する。
+fn lossy(args: &[&str]) -> Result<String> {
+    Ok(String::from_utf8_lossy(&run(args)?).into_owned())
 }
 
 #[cfg(test)]

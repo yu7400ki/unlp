@@ -420,6 +420,27 @@ fn a_range_of_commits_yields_the_diff_of_the_range() {
 }
 
 #[test]
+fn a_file_that_is_not_utf8_is_warned_and_skipped() {
+    let repo = Repo::new();
+    repo.write("doc.md", "初めの段落だ。\n");
+    repo.git(&["add", "."]);
+    repo.commit("chore: init\n");
+    // Shift_JIS の「日本」。NUL を含まないので git は本文として差分に出す。
+    fs::write(repo.path().join("sjis.md"), [0x93, 0xfa, 0x96, 0x7b, 0x0a]).unwrap();
+    repo.write("doc.md", "初めの段落だ。\n\n足した段落だ。\n");
+    repo.git(&["add", "."]);
+
+    let report = json(repo.unlp().args(["diff", "--staged", "--json"]));
+    assert_eq!(names(&report), ["doc.md"], "{report}");
+    repo.unlp()
+        .args(["diff", "--staged"])
+        .assert()
+        .success()
+        .stderr(contains("警告"))
+        .stderr(contains("sjis.md"));
+}
+
+#[test]
 fn a_single_rev_is_the_change_of_that_commit() {
     let repo = repo_with_staged_change();
     let staged = json(repo.unlp().args(["diff", "--staged", "--json"]));

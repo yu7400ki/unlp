@@ -123,7 +123,7 @@ fn run() -> Result<bool> {
             return Ok(false);
         }
         Command::Check { paths } => check(paths)?,
-        Command::Diff { staged, range } => git::diff_documents(&diff_face(*staged, range))?,
+        Command::Diff { staged, range } => diff(&diff_face(*staged, range))?,
         Command::Commits { number, range } => git::commit_documents(&commit_range(*number, range))?,
         Command::Stdin { format } => {
             let text = read_stdin()?;
@@ -197,12 +197,21 @@ fn install_hook(force: bool) -> Result<bool> {
     }
 }
 
+/// 差分の文書を読む。UTF-8 でないファイルは警告して飛ばす。
+fn diff(face: &git::Diff) -> Result<Vec<Document>> {
+    let diffed = git::diff_documents(face)?;
+    for path in &diffed.not_utf8 {
+        eprintln!("警告: {path} は UTF-8 で符号化されていない");
+    }
+    Ok(diffed.documents)
+}
+
 /// メッセージのファイルと索引に載せた差分を 1 つの入力にする。
 fn commit_msg_documents(file: &Path) -> Result<Vec<Document>> {
     let message =
         fs::read_to_string(file).with_context(|| format!("{} を読み込めない", file.display()))?;
     let mut documents: Vec<Document> = git::message_document(&message).into_iter().collect();
-    documents.extend(git::diff_documents(&git::Diff::Staged)?);
+    documents.extend(diff(&git::Diff::Staged)?);
     Ok(documents)
 }
 
