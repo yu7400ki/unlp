@@ -546,7 +546,7 @@ fn python_comments_docstrings_and_strings_are_scored() {
 }
 
 #[test]
-fn a_file_out_of_the_supported_kinds_is_skipped_with_a_warning() {
+fn a_file_out_of_the_formats_is_skipped_silently_in_a_walk() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("a.toml"), "key = \"設定の値だ。\"\n").unwrap();
     fs::write(dir.path().join("b.txt"), "本文だ。").unwrap();
@@ -567,9 +567,30 @@ fn a_file_out_of_the_supported_kinds_is_skipped_with_a_warning() {
             .ends_with("b.txt"),
         "{report}"
     );
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("警告"), "{stderr}");
-    assert!(stderr.contains("a.toml"), "{stderr}");
+    assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
+
+    let walked = unlp()
+        .args(["check", "--json", "data/"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    assert_eq!(String::from_utf8(walked.stderr).unwrap(), "");
+    let report: Value = serde_json::from_slice(&walked.stdout).unwrap();
+    assert!(
+        report["documents"].as_array().unwrap().is_empty(),
+        "{report}"
+    );
+}
+
+#[test]
+fn a_named_path_out_of_the_formats_is_warned() {
+    unlp()
+        .args(["check", "Cargo.toml"])
+        .assert()
+        .success()
+        .stderr(contains("警告"))
+        .stderr(contains("Cargo.toml"));
 }
 
 #[test]

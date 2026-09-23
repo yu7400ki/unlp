@@ -126,21 +126,25 @@ fn run() -> Result<bool> {
         .is_some_and(|point| report.exceeds(point)))
 }
 
-/// 対象のパスを展開し、日本語を含むファイルを文書にする。抽出の対象でないファイルと
-/// UTF-8 でないファイルは警告して飛ばす。
+/// 対象のパスを展開し、日本語を含むファイルを文書にする。抽出の書式を定めていない種類は、
+/// 明示されたパスなら警告し、走査で見つかったファイルは黙って飛ばす。UTF-8 でないファイルは
+/// 警告して飛ばす。
 fn check(paths: &[PathBuf]) -> Result<Vec<Document>> {
-    let mut files = Vec::new();
-    for path in paths {
-        files.extend(input::collect_files(path)?);
-    }
     let mut documents = Vec::new();
-    for file in files {
-        match input::read_document(&file) {
-            Ok(document) => documents.extend(document),
-            Err(error @ (input::Error::NotUtf8 { .. } | input::Error::Unsupported { .. })) => {
-                eprintln!("警告: {error}")
+    for path in paths {
+        for file in input::collect_files(path)? {
+            let named = file == *path;
+            match input::read_document(&file) {
+                Ok(input::Reading::Document(document)) => documents.push(document),
+                Ok(input::Reading::NoJapanese) => {}
+                Ok(input::Reading::Unsupported) => {
+                    if named {
+                        eprintln!("警告: {} は抽出の対象でない", file.display());
+                    }
+                }
+                Err(error @ input::Error::NotUtf8 { .. }) => eprintln!("警告: {error}"),
+                Err(error) => return Err(error.into()),
             }
-            Err(error) => return Err(error.into()),
         }
     }
     Ok(documents)

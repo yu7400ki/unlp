@@ -27,8 +27,6 @@ pub enum Error {
     },
     #[error("{} は UTF-8 で符号化されていない", path.display())]
     NotUtf8 { path: PathBuf },
-    #[error("{} は抽出の対象でない", path.display())]
-    Unsupported { path: PathBuf },
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -40,11 +38,21 @@ enum Format {
     Text,
 }
 
-/// ファイルを 1 つの文書として読み込む。日本語の文字を含む Segment が無ければ `None`。
-pub fn read_document(path: &Path) -> Result<Option<Document>> {
-    let format = format(path).ok_or_else(|| Error::Unsupported {
-        path: path.to_path_buf(),
-    })?;
+/// ファイルを読み込んだ結果。
+#[derive(Debug)]
+pub enum Reading {
+    Document(Document),
+    /// 日本語の文字を含む Segment が無い。
+    NoJapanese,
+    /// 抽出の書式を定めていない種類。
+    Unsupported,
+}
+
+/// ファイルを 1 つの文書として読み込む。
+pub fn read_document(path: &Path) -> Result<Reading> {
+    let Some(format) = format(path) else {
+        return Ok(Reading::Unsupported);
+    };
     let bytes = fs::read(path).map_err(|source| Error::Read {
         path: path.to_path_buf(),
         source,
@@ -58,7 +66,10 @@ pub fn read_document(path: &Path) -> Result<Option<Document>> {
         Format::Source(lang) => extract::source_document(name, &text, lang),
         Format::Text => extract::text_document(name, &text),
     };
-    Ok(extract::with_japanese(document))
+    Ok(match extract::with_japanese(document) {
+        Some(document) => Reading::Document(document),
+        None => Reading::NoJapanese,
+    })
 }
 
 /// 拡張子が決める書式。大小は区別しない。`.md` と `.markdown` は Markdown、構文木から
@@ -160,6 +171,14 @@ mod tests {
         assert!(matches!(error, Error::Read { .. }));
     }
 
+    /// 文書になった読み込みの中身。
+    fn document_of(reading: Reading) -> Document {
+        match reading {
+            Reading::Document(document) => document,
+            _ => panic!("文書になる読み込み"),
+        }
+    }
+
     #[test]
     fn only_files_with_japanese_become_documents() {
         let dir = tempfile::tempdir().unwrap();
@@ -168,8 +187,14 @@ mod tests {
         fs::write(&japanese, "文だ。").unwrap();
         fs::write(&latin, "no japanese here\n").unwrap();
 
-        assert!(read_document(&japanese).unwrap().is_some());
-        assert!(read_document(&latin).unwrap().is_none());
+        assert!(matches!(
+            read_document(&japanese).unwrap(),
+            Reading::Document(_)
+        ));
+        assert!(matches!(
+            read_document(&latin).unwrap(),
+            Reading::NoJapanese
+        ));
     }
 
     #[test]
@@ -179,7 +204,7 @@ mod tests {
         for (name, segments) in [("a.md", 1), ("a.MARKDOWN", 1), ("a.txt", 1), ("a", 1)] {
             let path = dir.path().join(name);
             fs::write(&path, text).unwrap();
-            let document = read_document(&path).unwrap().unwrap();
+            let document = document_of(read_document(&path).unwrap());
             assert_eq!(document.segments.len(), segments, "{name}");
         }
         let source = dir.path().join("a.rs");
@@ -188,7 +213,7 @@ mod tests {
             "// コメントだ。\nfn f() { let s = \"文字列だ。\"; }\n",
         )
         .unwrap();
-        let document = read_document(&source).unwrap().unwrap();
+        let document = document_of(read_document(&source).unwrap());
         assert_eq!(
             document
                 .segments
@@ -198,19 +223,11 @@ mod tests {
             ["コメントだ。", "文字列だ。"]
         );
         assert_eq!(
-            read_document(&dir.path().join("a.md"))
-                .unwrap()
-                .unwrap()
-                .segments[0]
-                .text,
+            document_of(read_document(&dir.path().join("a.md")).unwrap()).segments[0].text,
             "見出しだ"
         );
         assert_eq!(
-            read_document(&dir.path().join("a.txt"))
-                .unwrap()
-                .unwrap()
-                .segments[0]
-                .text,
+            document_of(read_document(&dir.path().join("a.txt")).unwrap()).segments[0].text,
             text
         );
     }
@@ -221,7 +238,7 @@ mod tests {
         fs::create_dir(dir.path().join("sub")).unwrap();
         let file = dir.path().join("sub").join("a.txt");
         fs::write(&file, "文だ。").unwrap();
-        let name = read_document(&file).unwrap().unwrap().name;
+        let name = document_of(read_document(&file).unwrap()).name;
         assert!(name.ends_with("sub/a.txt"), "{name}");
     }
 
@@ -247,7 +264,10 @@ mod tests {
         ] {
             let path = dir.path().join(name);
             fs::write(&path, text).unwrap();
-            assert!(read_document(&path).unwrap().is_some(), "{name}");
+            assert!(
+                matches!(read_document(&path).unwrap(), Reading::Document(_)),
+                "{name}"
+            );
         }
     }
 
@@ -258,7 +278,7 @@ mod tests {
             let path = dir.path().join(name);
             fs::write(&path, "値 = \"日本語だ。\"\n").unwrap();
             assert!(
-                matches!(read_document(&path), Err(Error::Unsupported { .. })),
+                matches!(read_document(&path).unwrap(), Reading::Unsupported),
                 "{name}"
             );
         }
