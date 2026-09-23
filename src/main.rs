@@ -32,11 +32,8 @@ enum Command {
     },
     /// 差分が触れた Segment を検査する
     Diff {
-        /// 索引に載せた変更を対象にする
-        #[arg(long, conflicts_with = "range")]
-        staged: bool,
-        /// コミットの範囲
-        range: Option<String>,
+        #[command(flatten)]
+        face: DiffFace,
     },
     /// コミットメッセージを検査する
     Commits {
@@ -73,6 +70,28 @@ enum HookCommand {
     },
     /// 設置した commit-msg hook を除去する
     Uninstall,
+}
+
+/// 対象の差分。`--staged` と範囲は同時に指定できない。
+#[derive(Args)]
+#[group(multiple = false)]
+struct DiffFace {
+    /// 索引に載せた変更を対象にする
+    #[arg(long)]
+    staged: bool,
+    /// コミットの範囲
+    range: Option<String>,
+}
+
+impl DiffFace {
+    /// 範囲を指定したときだけその範囲を対象にし、`--staged` と指定の無い呼び出しは索引に
+    /// 載せた変更を対象にする。
+    fn face(&self) -> git::Diff {
+        match (self.staged, &self.range) {
+            (false, Some(range)) => git::Diff::Range(range.clone()),
+            (true, _) | (false, None) => git::Diff::Staged,
+        }
+    }
 }
 
 /// 入力を抽出する書式。
@@ -123,7 +142,7 @@ fn run() -> Result<bool> {
             return Ok(false);
         }
         Command::Check { paths } => check(paths)?,
-        Command::Diff { staged, range } => diff(&diff_face(*staged, range))?,
+        Command::Diff { face } => diff(&face.face())?,
         Command::Commits { number, range } => git::commit_documents(&commit_range(*number, range))?,
         Command::Stdin { format } => {
             let text = read_stdin()?;
@@ -239,15 +258,6 @@ fn check(paths: &[PathBuf]) -> Result<Vec<Document>> {
     Ok(documents)
 }
 
-/// 範囲を指定したときだけその範囲を対象にし、`--staged` と指定の無い呼び出しは索引に載せた
-/// 変更を対象にする。
-fn diff_face(staged: bool, range: &Option<String>) -> git::Diff {
-    match (staged, range) {
-        (false, Some(range)) => git::Diff::Range(range.clone()),
-        (true, _) | (false, None) => git::Diff::Staged,
-    }
-}
-
 /// 範囲を指定しなければ直近の件数で、件数も指定しなければ直近の 1 件を対象にする。
 fn commit_range(number: Option<u32>, range: &Option<String>) -> git::CommitRange {
     match range {
@@ -321,4 +331,17 @@ fn format_layers(by_layer: &BTreeMap<Layer, f64>) -> String {
         .map(|(layer, point)| format!("{} {point:.1}", layer.name()))
         .collect();
     format!("（{}）", layers.join("、"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 差分の対象を 2 通り渡した呼び出し。
+    #[test]
+    fn the_staged_flag_and_a_range_do_not_go_together() {
+        assert!(Cli::try_parse_from(["unlp", "diff", "--staged"]).is_ok());
+        assert!(Cli::try_parse_from(["unlp", "diff", "HEAD~1..HEAD"]).is_ok());
+        assert!(Cli::try_parse_from(["unlp", "diff", "--staged", "HEAD~1..HEAD"]).is_err());
+    }
 }
