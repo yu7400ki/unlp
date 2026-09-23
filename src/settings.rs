@@ -143,7 +143,7 @@ struct Words {
 
 /// 採点の対象から外すパス。設定ファイルのあるディレクトリを根として、そこからの相対パスに
 /// グロブを照合する。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 struct Exclude {
     root: PathBuf,
     globs: Vec<GlobMatcher>,
@@ -188,7 +188,7 @@ impl Exclude {
 }
 
 /// 採点の設定。しきい値、下限、規則ごとの重み、規則ごとの語リスト、除外するパスを持つ。
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Settings {
     threshold: f64,
     floor: usize,

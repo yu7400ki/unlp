@@ -143,7 +143,7 @@ fn run() -> Result<bool> {
         Command::Hook {
             command: HookCommand::Install { .. } | HookCommand::Uninstall,
         } => Settings::default(),
-        command => Settings::load(cli.options.config.as_deref(), &config_start(command))?,
+        command => Settings::load(cli.options.config.as_deref(), config_start(command))?,
     };
     let documents = match &cli.command {
         Command::Rules => {
@@ -205,11 +205,13 @@ fn run() -> Result<bool> {
 }
 
 /// 設定ファイルを探索する起点。`check` は最初の対象のパス、他の面は現在のディレクトリ。
-fn config_start(command: &Command) -> PathBuf {
-    let current = || PathBuf::from(".");
+fn config_start(command: &Command) -> &Path {
     match command {
-        Command::Check { paths } => paths.first().cloned().unwrap_or_else(current),
-        _ => current(),
+        Command::Check { paths } => paths
+            .first()
+            .expect("check は対象のパスを 1 つ以上取る")
+            .as_path(),
+        _ => Path::new("."),
     }
 }
 
