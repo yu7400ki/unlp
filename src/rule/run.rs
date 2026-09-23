@@ -5,18 +5,25 @@ use crate::sentence::Sentence;
 /// 連打として数える文の数の下限。
 const MINIMUM: usize = 3;
 
-/// 1 つの Segment の中で条件を満たす文が続く範囲。`MINIMUM` 文以上続くものだけを、
-/// 始まりの順に返す。
+/// 1 つの Segment の中で改行を挟まずに条件を満たす文が続く範囲。`MINIMUM` 文以上続くもの
+/// だけを、始まりの順に返す。
 pub fn runs<'a, 's>(
     sentences: &'a [Sentence<'s>],
     matches: impl Fn(&Sentence) -> bool,
 ) -> Vec<&'a [Sentence<'s>]> {
     sentences
         .chunk_by(|left, right| {
-            ptr::eq(left.segment(), right.segment()) && matches(left) == matches(right)
+            ptr::eq(left.segment(), right.segment())
+                && !between(left, right).contains('\n')
+                && matches(left) == matches(right)
         })
         .filter(|run| run.len() >= MINIMUM && matches(&run[0]))
         .collect()
+}
+
+/// 同じ Segment で隣り合う 2 文の間の文字列。
+fn between<'s>(left: &Sentence<'s>, right: &Sentence<'s>) -> &'s str {
+    &left.segment().text[left.byte_range().end..right.byte_range().start]
 }
 
 #[cfg(test)]
@@ -63,6 +70,15 @@ mod tests {
         assert!(short_runs_of(&["短い。", "短い。", "短い。"]).is_empty());
         assert_eq!(
             short_runs_of(&["短い。短い。短い。", "短い。"]),
+            [["短い。", "短い。", "短い。"]]
+        );
+    }
+
+    #[test]
+    fn a_newline_between_the_sentences_ends_the_run() {
+        assert!(short_runs("短い。\n短い。\n短い。").is_empty());
+        assert_eq!(
+            short_runs("短い。短い。短い。\n短い。"),
             [["短い。", "短い。", "短い。"]]
         );
     }
