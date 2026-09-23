@@ -1,5 +1,6 @@
 pub mod document;
 pub mod extract;
+pub mod git;
 pub mod input;
 pub mod measure;
 pub mod morph;

@@ -1,0 +1,323 @@
+use std::num::NonZeroU32;
+use std::process::Command;
+use std::{io, result};
+
+use thiserror::Error;
+
+use crate::document::{Document, LineRange, Origin, Segment, SegmentKind};
+use crate::extract;
+
+/// コミットメッセージから取り出した Segment の位置の path。
+const COMMIT_PATH: &str = "<commit>";
+
+/// 文書の名前に載せるハッシュの桁数。
+const SHORT_HASH: usize = 7;
+
+/// 文書の名前に載せる題名の文字数。
+const SHORT_SUBJECT: usize = 20;
+
+/// git の実行と出力の解析で生じる誤り。
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("git を実行できない")]
+    Spawn(#[source] io::Error),
+    #[error("git {command} が失敗した: {message}")]
+    Failed { command: String, message: String },
+    #[error("git {command} の出力が UTF-8 で符号化されていない")]
+    NotUtf8 { command: String },
+}
+
+pub type Result<T> = result::Result<T, Error>;
+
+/// 採点するコミットの範囲。
+#[derive(Debug, Clone)]
+pub enum CommitRange {
+    /// 直近の件数。
+    Last(u32),
+    /// git の範囲の指定。
+    Spec(String),
+}
+
+impl CommitRange {
+    fn spec(&self) -> String {
+        match self {
+            Self::Last(count) => format!("HEAD~{count}..HEAD"),
+            Self::Spec(spec) => spec.clone(),
+        }
+    }
+}
+
+/// 範囲のコミットを 1 件 1 文書として読み込む。日本語を含まないコミットは文書にしない。
+pub fn commit_documents(range: &CommitRange) -> Result<Vec<Document>> {
+    let output = text(&["log", "--format=%H%x00%B%x00", &range.spec()])?;
+    let mut documents = Vec::new();
+    for (hash, message) in log_records(&output) {
+        let segments = message_segments(message, COMMIT_PATH, Some(hash));
+        let document = Document {
+            name: commit_name(hash, &segments),
+            segments,
+        };
+        documents.extend(extract::with_japanese(document));
+    }
+    Ok(documents)
+}
+
+/// `%H%x00%B%x00` の並びを、ハッシュとメッセージの対にする。
+fn log_records(output: &str) -> Vec<(&str, &str)> {
+    let mut records = Vec::new();
+    let mut fields = output.split('\0');
+    while let (Some(hash), Some(message)) = (fields.next(), fields.next()) {
+        let hash = hash.trim();
+        if !hash.is_empty() {
+            records.push((hash, message));
+        }
+    }
+    records
+}
+
+/// 短縮したハッシュと題名の先頭からなる文書の名前。
+fn commit_name(hash: &str, segments: &[Segment]) -> String {
+    let short: String = hash.chars().take(SHORT_HASH).collect();
+    let subject = segments.first().map_or("", |segment| segment.text.as_str());
+    let title: String = subject.chars().take(SHORT_SUBJECT).collect();
+    if title.is_empty() {
+        short
+    } else {
+        format!("{short} {title}")
+    }
+}
+
+/// コミットメッセージの Segment。`#` で始まる行と鋏の行から下、末尾の段落のトレーラー行を除き、
+/// 1 行目を題名、残りの段落を本文にする。
+fn message_segments(message: &str, path: &str, commit: Option<&str>) -> Vec<Segment> {
+    let lines: Vec<(NonZeroU32, &str)> = message
+        .lines()
+        .take_while(|line| !is_scissors(line))
+        .enumerate()
+        .map(|(at, line)| (line_number(at), line))
+        .filter(|(_, line)| !line.starts_with('#'))
+        .collect();
+    let trailers = last_paragraph_start(&lines);
+    let lines: Vec<(NonZeroU32, &str)> = lines
+        .iter()
+        .enumerate()
+        .filter(|(at, (_, line))| {
+            let in_last_paragraph = trailers.is_some_and(|start| *at >= start);
+            !(in_last_paragraph && is_trailer(line))
+        })
+        .map(|(_, line)| *line)
+        .collect();
+
+    let mut segments = Vec::new();
+    let mut lines = lines.into_iter().skip_while(|(_, line)| is_blank(line));
+    let Some(subject) = lines.next() else {
+        return segments;
+    };
+    segments.push(segment(
+        &[subject],
+        SegmentKind::CommitSubject,
+        path,
+        commit,
+    ));
+    let mut paragraph: Vec<(NonZeroU32, &str)> = Vec::new();
+    for (number, line) in lines {
+        if is_blank(line) {
+            if !paragraph.is_empty() {
+                segments.push(segment(&paragraph, SegmentKind::CommitBody, path, commit));
+                paragraph.clear();
+            }
+        } else {
+            paragraph.push((number, line));
+        }
+    }
+    if !paragraph.is_empty() {
+        segments.push(segment(&paragraph, SegmentKind::CommitBody, path, commit));
+    }
+    segments
+}
+
+/// 連続する行から 1 つの Segment を作る。
+fn segment(
+    lines: &[(NonZeroU32, &str)],
+    kind: SegmentKind,
+    path: &str,
+    commit: Option<&str>,
+) -> Segment {
+    let (first, _) = *lines.first().expect("Segment は 1 行以上を持つ");
+    let (last, _) = *lines.last().expect("Segment は 1 行以上を持つ");
+    let text = lines
+        .iter()
+        .map(|(_, line)| *line)
+        .collect::<Vec<&str>>()
+        .join("\n");
+    Segment {
+        text,
+        origin: Origin {
+            path: path.to_string(),
+            lines: LineRange::new(first, last).expect("終了行は開始行を下回らない"),
+            commit: commit.map(str::to_string),
+        },
+        kind,
+    }
+}
+
+/// 末尾の段落の最初の行の位置。段落が 1 つだけのときは `None`。
+fn last_paragraph_start(lines: &[(NonZeroU32, &str)]) -> Option<usize> {
+    let end = lines.iter().rposition(|(_, line)| !is_blank(line))?;
+    let blank = lines[..end].iter().rposition(|(_, line)| is_blank(line))?;
+    Some(blank + 1)
+}
+
+/// `Key: value` の形の行。Key は英字とハイフンからなる。
+fn is_trailer(line: &str) -> bool {
+    let Some((key, _)) = line.split_once(": ") else {
+        return false;
+    };
+    !key.is_empty() && key.chars().all(|c| c.is_ascii_alphabetic() || c == '-')
+}
+
+/// `git commit -v` がメッセージと差分を隔てる鋏の行。
+fn is_scissors(line: &str) -> bool {
+    line.starts_with('#') && line.contains(">8")
+}
+
+fn is_blank(line: &str) -> bool {
+    line.trim().is_empty()
+}
+
+fn line_number(at: usize) -> NonZeroU32 {
+    let number = u32::try_from(at + 1).unwrap_or(u32::MAX);
+    NonZeroU32::new(number).unwrap_or(NonZeroU32::MIN)
+}
+
+/// git を実行し、標準出力を返す。
+fn run(args: &[&str]) -> Result<Vec<u8>> {
+    let output = Command::new("git")
+        .args(["-c", "core.quotepath=false"])
+        .args(args)
+        .output()
+        .map_err(Error::Spawn)?;
+    if !output.status.success() {
+        return Err(Error::Failed {
+            command: args.join(" "),
+            message: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
+    Ok(output.stdout)
+}
+
+fn text(args: &[&str]) -> Result<String> {
+    String::from_utf8(run(args)?).map_err(|_| Error::NotUtf8 {
+        command: args.join(" "),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn segments(message: &str) -> Vec<Segment> {
+        message_segments(message, COMMIT_PATH, Some("0123456789abcdef"))
+    }
+
+    fn texts(message: &str) -> Vec<String> {
+        segments(message)
+            .into_iter()
+            .map(|segment| segment.text)
+            .collect()
+    }
+
+    #[test]
+    fn the_records_of_the_log_are_the_hash_and_the_message() {
+        let output = "aaa\u{0}題名だ\n\u{0}\nbbb\u{0}別の題名だ\n\n本文だ。\n\u{0}\n";
+        assert_eq!(
+            log_records(output),
+            [("aaa", "題名だ\n"), ("bbb", "別の題名だ\n\n本文だ。\n")]
+        );
+        assert_eq!(log_records(""), []);
+    }
+
+    #[test]
+    fn the_first_line_is_the_subject_and_the_paragraphs_are_the_body() {
+        let message = "題名だ\n\n一つ目の段落だ。\n続く行だ。\n\n二つ目の段落だ。\n";
+        assert_eq!(
+            texts(message),
+            ["題名だ", "一つ目の段落だ。\n続く行だ。", "二つ目の段落だ。"]
+        );
+        assert_eq!(
+            segments(message)
+                .iter()
+                .map(|segment| segment.kind)
+                .collect::<Vec<SegmentKind>>(),
+            [
+                SegmentKind::CommitSubject,
+                SegmentKind::CommitBody,
+                SegmentKind::CommitBody
+            ]
+        );
+    }
+
+    #[test]
+    fn the_lines_hold_the_place_in_the_message() {
+        let segments = segments("題名だ\n\n# 案内の行\n本文だ。\n続く行だ。\n");
+        let lines: Vec<(u32, u32)> = segments
+            .iter()
+            .map(|segment| {
+                (
+                    segment.origin.lines.start().get(),
+                    segment.origin.lines.end().get(),
+                )
+            })
+            .collect();
+        assert_eq!(lines, [(1, 1), (4, 5)]);
+        assert_eq!(segments[0].origin.path, COMMIT_PATH);
+        assert_eq!(
+            segments[0].origin.commit.as_deref(),
+            Some("0123456789abcdef")
+        );
+    }
+
+    #[test]
+    fn the_trailers_of_the_last_paragraph_are_not_segments() {
+        assert_eq!(
+            texts(
+                "題名だ\n\n本文だ。\n\nCo-Authored-By: 手伝い <a@example.com>\nSigned-off-by: 誰か <b@example.com>\n"
+            ),
+            ["題名だ", "本文だ。"]
+        );
+        assert_eq!(
+            texts("題名だ\n\n本文だ。\nCo-Authored-By: 手伝い <a@example.com>\n"),
+            ["題名だ", "本文だ。"]
+        );
+        assert_eq!(texts("Refs: 番号だ\n"), ["Refs: 番号だ"]);
+        assert_eq!(
+            texts("題名だ\n\n注記: これは本文だ。\n"),
+            ["題名だ", "注記: これは本文だ。"]
+        );
+    }
+
+    #[test]
+    fn the_diff_below_the_scissors_is_not_a_segment() {
+        assert_eq!(
+            texts(
+                "題名だ\n\n# ------------------------ >8 ------------------------\n# 下は差分だ\n+日本語の行だ。\n"
+            ),
+            ["題名だ"]
+        );
+    }
+
+    #[test]
+    fn an_empty_message_has_no_segments() {
+        assert!(texts("").is_empty());
+        assert!(texts("# 案内の行だけだ\n\n").is_empty());
+    }
+
+    #[test]
+    fn the_name_carries_the_short_hash_and_the_subject() {
+        let hash = "0123456789abcdef";
+        let message = "題名はここでは二十字を超える長さで書いてある一文だ\n";
+        let name = commit_name(hash, &segments(message));
+        assert_eq!(name, "0123456 題名はここでは二十字を超える長さで書いて");
+        assert_eq!(commit_name(hash, &[]), "0123456");
+    }
+}
