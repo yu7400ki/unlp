@@ -12,15 +12,21 @@ use super::Lines;
 use crate::document::{Document, Origin, Segment, SegmentKind};
 use crate::sentence::is_japanese;
 
-/// 構文木からコメントと文字列リテラルを取り出せる言語。
+/// 構文木からコメントと文字列リテラルを取り出せる言語と、取り出すノード種別。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SourceLang(SupportLang);
+pub struct SourceLang {
+    lang: SupportLang,
+    kinds: &'static [(&'static str, Face)],
+}
 
 impl SourceLang {
     /// パスの拡張子が指す言語。取り出すノード種別を定めていない言語は `None`。
     pub fn from_path(path: &Path) -> Option<Self> {
         let lang = SupportLang::from_path(path)?;
-        kinds(lang).is_some().then_some(Self(lang))
+        Some(Self {
+            lang,
+            kinds: kinds(lang)?,
+        })
     }
 }
 
@@ -59,10 +65,10 @@ fn kinds(lang: SupportLang) -> Option<&'static [(&'static str, Face)]> {
 /// ソースコードのコメントと文字列リテラルを Segment とする文書。日本語を含まない Segment は
 /// 持たない。
 pub fn source_document(name: String, text: &str, lang: SourceLang) -> Document {
-    let SourceLang(lang) = lang;
+    let SourceLang { lang, kinds } = lang;
     let root = lang.ast_grep(text);
     let mut parts = Vec::new();
-    for (kind, face) in kinds(lang).unwrap_or_default() {
+    for (kind, face) in kinds {
         let matcher = KindMatcher::new(kind, lang);
         for node in root.root().find_all(&matcher) {
             parts.push(Part {
