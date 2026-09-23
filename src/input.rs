@@ -73,12 +73,17 @@ pub fn read_document(path: &Path) -> Result<Reading> {
 }
 
 /// 拡張子が決める書式。大小は区別しない。`.md` と `.markdown` は Markdown、構文木から
-/// 取り出せる言語はソースコード、`.txt` と拡張子の無いファイルは本文。他は対象外。
+/// 取り出せる言語はソースコード、`.txt` と拡張子の無いファイル（名前が `.` で始まるものを
+/// 除く）は本文。他は対象外。
 fn format(path: &Path) -> Option<Format> {
     let extension = path
         .extension()
         .map(|extension| extension.to_string_lossy().to_lowercase());
+    let dotfile = path
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().starts_with('.'));
     match extension.as_deref() {
+        None if dotfile => None,
         None => Some(Format::Text),
         Some(extension) if MARKDOWN_EXTENSIONS.contains(&extension) => Some(Format::Markdown),
         Some(extension) if TEXT_EXTENSIONS.contains(&extension) => Some(Format::Text),
@@ -250,6 +255,22 @@ mod tests {
         assert!(matches!(
             read_document(&file).unwrap_err(),
             Error::NotUtf8 { .. }
+        ));
+    }
+
+    #[test]
+    fn a_dotfile_without_an_extension_is_unsupported() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".gitignore");
+        fs::write(
+            &path,
+            "生成物を除く
+",
+        )
+        .unwrap();
+        assert!(matches!(
+            read_document(&path).unwrap(),
+            Reading::Unsupported
         ));
     }
 
