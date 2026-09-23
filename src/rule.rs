@@ -17,7 +17,6 @@ mod f03;
 mod f04;
 pub(crate) use f04::ARROWS;
 mod f05;
-mod f06;
 mod g01;
 #[cfg(test)]
 pub(crate) mod harness;
@@ -240,7 +239,6 @@ pub fn sentence_rules() -> Vec<Box<dyn SentenceRule>> {
         Box::new(f03::BoldInProse),
         Box::new(f04::DashAndArrow),
         Box::new(f05::EmptyEmphasis),
-        Box::new(f06::Circumlocution),
     ]
 }
 

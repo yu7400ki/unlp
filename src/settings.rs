@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn the_defaults_weigh_every_registered_rule() {
         let settings = Settings::default();
-        assert_eq!(settings.weights().len(), 22);
+        assert_eq!(settings.weights().len(), 21);
         for (rule, _) in registered() {
             assert!(settings.weights().contains_key(&rule), "{rule}");
         }
