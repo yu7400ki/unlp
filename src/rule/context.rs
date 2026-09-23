@@ -26,6 +26,11 @@ impl WordList {
     pub fn words(&self, group: &str) -> impl Iterator<Item = &str> {
         self.0.get(group).into_iter().flatten().map(String::as_str)
     }
+
+    /// 書き換えられる欄の語。持たない欄は `None`。
+    pub(crate) fn group_mut(&mut self, group: &str) -> Option<&mut BTreeSet<String>> {
+        self.0.get_mut(group)
+    }
 }
 
 /// 規則が参照する、文書と設定から決まる値。
@@ -80,7 +85,7 @@ impl Context {
         if let Some(words) = context
             .lists
             .get_mut(&rule)
-            .and_then(|list| list.0.get_mut(group))
+            .and_then(|list| list.group_mut(group))
         {
             words.remove(word);
         }

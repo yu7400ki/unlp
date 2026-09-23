@@ -95,6 +95,16 @@ pub enum Error {
         #[source]
         source: toml::de::Error,
     },
+    #[error("{} の {rule} は規則 ID でない", path.display())]
+    UnknownRule { path: PathBuf, rule: String },
+    #[error("{} の {rule} は語リストを持たない", path.display())]
+    NoList { path: PathBuf, rule: RuleId },
+    #[error("{} の {rule} に {group} の欄は無い", path.display())]
+    UnknownGroup {
+        path: PathBuf,
+        rule: RuleId,
+        group: String,
+    },
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -105,6 +115,20 @@ pub type Result<T> = result::Result<T, Error>;
 struct File {
     threshold: Option<f64>,
     floor: Option<usize>,
+    #[serde(default)]
+    weights: BTreeMap<String, f64>,
+    #[serde(default)]
+    lists: BTreeMap<String, BTreeMap<String, Words>>,
+}
+
+/// 語リストの 1 つの欄に対する、語の追加と除外。
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Words {
+    #[serde(default)]
+    add: Vec<String>,
+    #[serde(default)]
+    remove: Vec<String>,
 }
 
 /// 採点の設定。しきい値、下限、規則ごとの重み、規則ごとの語リストを持つ。
@@ -157,6 +181,25 @@ impl Settings {
         if let Some(floor) = file.floor {
             self.floor = floor;
         }
+        for (key, weight) in file.weights {
+            self.weights.insert(rule_id(&key, path)?, weight);
+        }
+        for (key, groups) in file.lists {
+            let rule = rule_id(&key, path)?;
+            let list = self.lists.get_mut(&rule).ok_or(Error::NoList {
+                path: path.to_path_buf(),
+                rule,
+            })?;
+            for (group, words) in groups {
+                let listed = list.group_mut(&group).ok_or_else(|| Error::UnknownGroup {
+                    path: path.to_path_buf(),
+                    rule,
+                    group: group.clone(),
+                })?;
+                listed.extend(words.add);
+                listed.retain(|word| !words.remove.contains(word));
+            }
+        }
         Ok(self)
     }
 
@@ -179,6 +222,17 @@ impl Settings {
     pub fn lists(&self) -> &BTreeMap<RuleId, WordList> {
         &self.lists
     }
+}
+
+/// 設定が指す規則 ID。登録していない規則の ID は誤りにする。
+fn rule_id(key: &str, path: &Path) -> Result<RuleId> {
+    key.parse()
+        .ok()
+        .filter(|rule| DEFAULT_WEIGHTS.contains_key(rule))
+        .ok_or_else(|| Error::UnknownRule {
+            path: path.to_path_buf(),
+            rule: key.to_string(),
+        })
 }
 
 /// 起点から上位に走査して最初に見つかった設定ファイル。
@@ -305,6 +359,75 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let error = Settings::load(Some(&dir.path().join(FILE_NAME)), dir.path()).unwrap_err();
         assert!(matches!(error, Error::Read { .. }), "{error}");
+    }
+
+    /// S01 の語リスト。
+    fn s01(settings: &Settings) -> &WordList {
+        &settings.lists()[&RuleId::new(Layer::Structure, 1)]
+    }
+
+    #[test]
+    fn the_weights_of_the_file_override_the_defaults() {
+        let dir = dir_with("[weights]\nS01 = 6.0\nG01 = 0.0\n");
+        let settings = found_in(dir.path()).unwrap();
+        assert_eq!(settings.weights()[&RuleId::new(Layer::Structure, 1)], 6.0);
+        assert_eq!(settings.weights()[&RuleId::new(Layer::Goshu, 1)], 0.0);
+        assert_eq!(
+            settings.weights().len(),
+            Settings::default().weights().len(),
+            "上書きは規則を増やさない"
+        );
+    }
+
+    #[test]
+    fn the_words_of_the_file_join_the_defaults() {
+        let dir = dir_with("[lists.S01.person]\nadd = [\"型\"]\nremove = [\"利用者\"]\n");
+        let settings = found_in(dir.path()).unwrap();
+        assert!(s01(&settings).contains("person", "型"));
+        assert!(!s01(&settings).contains("person", "利用者"));
+        assert!(
+            s01(&settings).contains("speech", "述べる"),
+            "触れていない欄は既定のまま"
+        );
+    }
+
+    #[test]
+    fn a_word_in_both_the_add_and_the_remove_is_removed() {
+        let dir = dir_with("[lists.S01.person]\nadd = [\"型\"]\nremove = [\"型\"]\n");
+        assert!(!s01(&found_in(dir.path()).unwrap()).contains("person", "型"));
+    }
+
+    #[test]
+    fn an_unknown_rule_id_is_an_error() {
+        for key in ["S99", "ZZ", "s01"] {
+            for config in [
+                format!("[weights]\n{key} = 1.0\n"),
+                format!("[lists.{key}.person]\nadd = [\"型\"]\n"),
+            ] {
+                let dir = dir_with(&config);
+                let error = found_in(dir.path()).unwrap_err();
+                assert!(
+                    matches!(&error, Error::UnknownRule { rule, .. } if rule == key),
+                    "{config}: {error}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_rule_without_a_list_cannot_take_words() {
+        let dir = dir_with("[lists.G01.person]\nadd = [\"型\"]\n");
+        let error = found_in(dir.path()).unwrap_err();
+        assert!(matches!(error, Error::NoList { .. }), "{error}");
+        assert!(error.to_string().contains("G01"), "{error}");
+    }
+
+    #[test]
+    fn an_unknown_group_of_a_list_is_an_error() {
+        let dir = dir_with("[lists.S01.people]\nadd = [\"型\"]\n");
+        let error = found_in(dir.path()).unwrap_err();
+        assert!(matches!(error, Error::UnknownGroup { .. }), "{error}");
+        assert!(error.to_string().contains("people"), "{error}");
     }
 
     #[test]
