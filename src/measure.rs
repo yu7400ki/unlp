@@ -20,14 +20,14 @@ pub struct Measures {
 
 /// 文書 1 つの計測。
 #[derive(Debug, Clone)]
-pub struct Measurement {
+pub(crate) struct Measurement {
     measures: Measures,
     final_predicates: FinalPredicates,
 }
 
 impl Measurement {
     /// 解析済みの文から計測する。
-    pub fn of(sentences: &[Sentence]) -> Self {
+    pub(crate) fn of(sentences: &[Sentence]) -> Self {
         let final_predicates = FinalPredicates::of(sentences);
         Self {
             measures: Measures {

@@ -69,7 +69,7 @@ fn head_length(tokens: &[Token], conjunction: &str) -> Option<usize> {
         .map(|index| index + 1)
 }
 
-/// 前の語に続いて 1 つの文節を作る Token。
+/// 前の語に続いて同じ節に留まる Token。新しい節はここに無い品詞で始まる。
 fn continues(token: &Token) -> bool {
     matches!(
         token.pos.pos1,
