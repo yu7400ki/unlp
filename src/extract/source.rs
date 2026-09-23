@@ -379,17 +379,23 @@ fn segment_kind(lang: SupportLang, node: &Node<StrDoc<SupportLang>>, face: Face)
     }
 }
 
-/// モジュール、関数、クラスの先頭に置いた文字列か。
+/// モジュール、関数、クラスの本体で、コメントを除いた最初の文が持つ文字列か。
 fn is_docstring(node: &Node<StrDoc<SupportLang>>) -> bool {
     let Some(statement) = node.parent() else {
         return false;
     };
-    if statement.kind() != "expression_statement" || statement.prev().is_some() {
-        return false;
-    }
-    match statement.parent() {
-        Some(body) if body.kind() == "module" => true,
-        Some(body) if body.kind() == "block" => body.parent().is_some_and(|owner| {
+    let first = statement.kind() == "expression_statement"
+        && statement
+            .prev_all()
+            .all(|sibling| sibling.kind() == "comment");
+    first && statement.parent().is_some_and(is_body)
+}
+
+/// モジュール、関数、クラスの本体か。
+fn is_body(node: Node<StrDoc<SupportLang>>) -> bool {
+    match node.kind().as_ref() {
+        "module" => true,
+        "block" => node.parent().is_some_and(|owner| {
             matches!(
                 owner.kind().as_ref(),
                 "function_definition" | "class_definition"
@@ -662,6 +668,34 @@ mod tests {
                 SegmentKind::DocComment,
                 SegmentKind::DocComment,
                 SegmentKind::StringLiteral,
+                SegmentKind::StringLiteral,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_comment_before_a_docstring_leaves_it_a_doc_comment() {
+        let source = concat!(
+            "#!/usr/bin/env python\n",
+            "# -*- coding: utf-8 -*-\n",
+            "\"\"\"モジュールの説明だ。\"\"\"\n",
+            "def f():\n",
+            "    \"\"\"関数の説明だ。\"\"\"\n",
+            "    \"二文目の文字列だ。\"\n",
+        );
+        assert_eq!(
+            texts("a.py", source),
+            [
+                "モジュールの説明だ。",
+                "関数の説明だ。",
+                "二文目の文字列だ。"
+            ]
+        );
+        assert_eq!(
+            kinds_of("a.py", source),
+            [
+                SegmentKind::DocComment,
+                SegmentKind::DocComment,
                 SegmentKind::StringLiteral,
             ]
         );
