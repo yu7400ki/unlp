@@ -9,6 +9,9 @@ use crate::sentence::{self, Sentence};
 /// 正規化した点で採点する日本語文字数の下限。
 pub const DEFAULT_FLOOR: usize = 300;
 
+/// 超過と判断する既定のしきい値。
+pub const DEFAULT_THRESHOLD: f64 = 10.0;
+
 /// 入力全体の結果。
 #[derive(Debug, Clone, Serialize)]
 pub struct Report {

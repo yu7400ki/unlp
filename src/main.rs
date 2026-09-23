@@ -1,13 +1,16 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::io::{Read, stdin};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 use unlp::extract::{self, STDIN_NAME};
 use unlp::morph::Analyzer;
-use unlp::score::{DEFAULT_FLOOR, DocumentScore, Report, Score, ScoreMode, Total};
+use unlp::score::{
+    DEFAULT_FLOOR, DEFAULT_THRESHOLD, DocumentScore, Report, Score, ScoreMode, Total,
+};
 use unlp::{Document, Finding, Layer, git, input, rule};
 
 /// 日本語の文章に残る AI の癖を検出して採点する。
@@ -49,8 +52,19 @@ enum Command {
         #[arg(long, value_enum, default_value_t = Format::Text)]
         format: Format,
     },
+    /// git の hook として動作する
+    Hook {
+        #[command(subcommand)]
+        command: HookCommand,
+    },
     /// 規則の一覧と規則集の見出しを出力する
     Rules,
+}
+
+#[derive(Subcommand)]
+enum HookCommand {
+    /// メッセージのファイルと索引に載せた差分をまとめて検査する
+    CommitMsg { file: PathBuf },
 }
 
 /// 入力を抽出する書式。
@@ -108,6 +122,9 @@ fn run() -> Result<bool> {
             let document = format.document(STDIN_NAME.to_string(), &text);
             extract::with_japanese(document).into_iter().collect()
         }
+        Command::Hook { command } => match command {
+            HookCommand::CommitMsg { file } => commit_msg_documents(file)?,
+        },
     };
 
     let analyzer = Analyzer::new()?;
@@ -137,10 +154,27 @@ fn run() -> Result<bool> {
     } else {
         print_report(&report);
     }
-    Ok(cli
-        .options
-        .fail_over
-        .is_some_and(|point| report.exceeds(point)))
+    let fail_over = cli.options.fail_over.or(default_fail_over(&cli.command));
+    Ok(fail_over.is_some_and(|point| report.exceeds(point)))
+}
+
+/// `--fail-over` を指定しないときのしきい値。関門は既定のしきい値で判断する。
+fn default_fail_over(command: &Command) -> Option<f64> {
+    match command {
+        Command::Hook {
+            command: HookCommand::CommitMsg { .. },
+        } => Some(DEFAULT_THRESHOLD),
+        _ => None,
+    }
+}
+
+/// メッセージのファイルと索引に載せた差分を 1 つの入力にする。
+fn commit_msg_documents(file: &Path) -> Result<Vec<Document>> {
+    let message =
+        fs::read_to_string(file).with_context(|| format!("{} を読み込めない", file.display()))?;
+    let mut documents: Vec<Document> = git::message_document(&message).into_iter().collect();
+    documents.extend(git::diff_documents(&git::Diff::Staged)?);
+    Ok(documents)
 }
 
 /// 対象のパスを展開し、日本語を含むファイルを文書にする。抽出の書式を定めていない種類は、

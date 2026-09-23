@@ -274,3 +274,21 @@ fn a_range_of_commits_yields_the_diff_of_the_range() {
         "{range}"
     );
 }
+
+#[test]
+fn the_commit_msg_hook_stops_a_message_with_a_finding() {
+    let repo = repo_with_staged_change();
+    repo.write(".git/MESSAGE", "型の doc が名乗る。\n");
+
+    repo.unlp()
+        .args(["hook", "commit-msg", ".git/MESSAGE"])
+        .assert()
+        .code(1)
+        .stdout(contains("S01"));
+
+    repo.write(".git/MESSAGE", "chore: 変更を記録する\n");
+    repo.unlp()
+        .args(["hook", "commit-msg", ".git/MESSAGE"])
+        .assert()
+        .success();
+}

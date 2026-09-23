@@ -12,6 +12,9 @@ use crate::input::{self, Reading};
 /// コミットメッセージから取り出した Segment の位置の path。
 const COMMIT_PATH: &str = "<commit>";
 
+/// メッセージのファイルから取り出した Segment の位置の path。
+const MESSAGE_PATH: &str = "<commit-msg>";
+
 /// 範囲を持たない指定で差分の内容を読むリビジョン。
 const HEAD: &str = "HEAD";
 
@@ -65,6 +68,15 @@ pub fn commit_documents(range: &CommitRange) -> Result<Vec<Document>> {
         documents.extend(extract::with_japanese(document));
     }
     Ok(documents)
+}
+
+/// 書きかけのコミットメッセージを 1 つの文書にする。日本語を含まなければ文書にしない。
+pub fn message_document(message: &str) -> Option<Document> {
+    let document = Document {
+        name: MESSAGE_PATH.to_string(),
+        segments: message_segments(message, MESSAGE_PATH, None),
+    };
+    extract::with_japanese(document)
 }
 
 /// 採点する差分の面。
