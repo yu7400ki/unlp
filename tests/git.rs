@@ -568,3 +568,17 @@ fn the_excluded_paths_are_not_in_the_staged_diff() {
     let report = json(repo.unlp().args(["diff", "--staged", "--json"]));
     assert_eq!(names(&report), ["doc.md", SPACED_PATH], "{report}");
 }
+
+#[test]
+fn the_hook_is_installed_and_removed_with_a_broken_config() {
+    let repo = Repo::new();
+    repo.write("unlp.toml", "threshold =\n");
+
+    repo.unlp().args(["hook", "install"]).assert().success();
+    assert!(
+        repo.read(".git/hooks/commit-msg")
+            .contains("unlp hook commit-msg")
+    );
+    repo.unlp().args(["hook", "uninstall"]).assert().success();
+    assert!(!repo.path().join(".git/hooks/commit-msg").exists());
+}

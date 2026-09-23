@@ -138,7 +138,13 @@ fn main() -> ExitCode {
 
 fn run() -> Result<bool> {
     let cli = Cli::parse();
-    let settings = Settings::load(cli.options.config.as_deref(), &config_start(&cli.command))?;
+    let settings = match &cli.command {
+        // hook の設置と除去は設定を読まない。壊れた設定でも hook を外せる
+        Command::Hook {
+            command: HookCommand::Install { .. } | HookCommand::Uninstall,
+        } => Settings::default(),
+        command => Settings::load(cli.options.config.as_deref(), &config_start(command))?,
+    };
     let documents = match &cli.command {
         Command::Rules => {
             print_rules(&settings);
