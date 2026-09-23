@@ -8,7 +8,7 @@ const HINT: &str = "文末の述語は分野の慣習語にする（動作する
 const THRESHOLD: f64 = 0.70;
 
 /// 割合を判定する文末の述語の数の下限。
-const MINIMUM: usize = 5;
+const MINIMUM: usize = 10;
 
 /// 抜粋に列挙する語の数。
 const WORDS: usize = 10;
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn a_document_of_wago_predicates_is_a_finding() {
-        assert_eq!(excerpts(&document(5, 0)), ["比べる 5"]);
+        assert_eq!(excerpts(&document(10, 0)), ["比べる 10"]);
         assert_eq!(excerpts(&document(8, 2)), ["比べる 8"]);
     }
 
@@ -83,8 +83,8 @@ mod tests {
 
     #[test]
     fn a_document_below_the_minimum_count_is_not_judged() {
-        assert!(excerpts(&document(4, 0)).is_empty());
-        assert_eq!(excerpts(&document(5, 0)).len(), 1);
+        assert!(excerpts(&document(9, 0)).is_empty());
+        assert_eq!(excerpts(&document(10, 0)).len(), 1);
     }
 
     #[test]
@@ -96,9 +96,9 @@ mod tests {
     fn the_excerpt_lists_the_wago_verbs_in_the_order_of_their_count() {
         assert_eq!(
             excerpts(
-                "窓を開ける。設定を比べる。値を比べる。語を比べる。規則を数える。値を数える。"
+                "窓を開ける。設定を比べる。値を比べる。語を比べる。規則を数える。値を数える。\n                 鍵を回す。鍵を回す。鍵を回す。鍵を回す。"
             ),
-            ["比べる 3、数える 2、開ける 1"]
+            ["回す 4、比べる 3、数える 2、開ける 1"]
         );
     }
 

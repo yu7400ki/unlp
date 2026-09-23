@@ -18,7 +18,7 @@ impl SentenceRule for Circumlocution {
         "F06"
     }
 
-    /// 「することができる」と、「を行う」「を実施する」「を実現する」の並び。
+    /// 「することができる」と、「を実施する」「を実現する」の並び。
     fn check(&self, sentence: &Sentence, _context: &Context) -> Vec<Finding> {
         let tokens = sentence.tokens();
         let ranges = (0..tokens.len())
@@ -43,15 +43,12 @@ fn able_to(tokens: &[Token], index: usize) -> Option<usize> {
     .then_some(end)
 }
 
-/// 「を行う」「を実施する」「を実現する」の末尾の位置。
+/// 「を実施する」「を実現する」の末尾の位置。
 fn performs(tokens: &[Token], index: usize) -> Option<usize> {
     if !is_case_particle(tokens.get(index)?, "を") {
         return None;
     }
     let next = tokens.get(index + 1)?;
-    if is_verb(next, "行う") {
-        return Some(index + 1);
-    }
     let follows_suru = matches!(next.lemma.as_str(), "実施" | "実現")
         && tokens
             .get(index + 2)
@@ -79,7 +76,7 @@ mod tests {
 
     #[test]
     fn a_roundabout_verb_is_a_finding() {
-        assert_eq!(excerpts("検証を行う。"), ["を行う"]);
+        assert!(excerpts("検証を行う。").is_empty());
         assert_eq!(excerpts("移行を実施する。"), ["を実施する"]);
         assert_eq!(excerpts("機能を実現する。"), ["を実現する"]);
     }
@@ -99,6 +96,9 @@ mod tests {
 
     #[test]
     fn the_findings_follow_the_order_of_the_text() {
-        assert_eq!(excerpts("設定を行い、検証を行う。"), ["を行い", "を行う"]);
+        assert_eq!(
+            excerpts("設定を実施し、検証を実現する。"),
+            ["を実施し", "を実現する"]
+        );
     }
 }
