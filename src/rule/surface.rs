@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn a_phrase_is_found_wherever_it_appears() {
         assert_eq!(matches("つまり、つまり、", ["つまり、"]), [0..12, 12..24]);
-        assert_eq!(matches("要するに", ["つまり、"]), []);
+        assert!(matches("要するに", ["つまり、"]).is_empty());
     }
 
     #[test]
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn an_empty_phrase_matches_nothing() {
-        assert_eq!(matches("文だ。", [""]), []);
+        assert!(matches("文だ。", [""]).is_empty());
     }
 
     #[test]

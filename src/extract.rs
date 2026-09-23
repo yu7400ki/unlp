@@ -7,6 +7,9 @@ use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 use crate::document::{Document, LineRange, Origin, Segment, SegmentKind};
 use crate::sentence::{BOLD, is_japanese};
 
+mod source;
+pub use source::{SourceLang, source_document};
+
 /// 標準入力から読んだ文書の名前。
 pub const STDIN_NAME: &str = "<stdin>";
 

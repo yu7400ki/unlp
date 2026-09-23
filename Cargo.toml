@@ -5,6 +5,14 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.104"
+ast-grep-core = "0.45"
+ast-grep-language = { version = "0.45", default-features = false, features = [
+  "tree-sitter-rust",
+  "tree-sitter-python",
+  "tree-sitter-typescript",
+  "tree-sitter-javascript",
+  "tree-sitter-go",
+] }
 clap = { version = "4.6.7", features = ["derive"] }
 lindera = { version = "6", features = ["embed-unidic"] }
 pulldown-cmark = { version = "0.13", default-features = false }
