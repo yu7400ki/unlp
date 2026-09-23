@@ -216,11 +216,14 @@ fn install_hook(force: bool) -> Result<bool> {
     }
 }
 
-/// 差分の文書を読む。UTF-8 でないファイルは警告して飛ばす。
+/// 差分の文書を読む。UTF-8 でないファイルと git が内容を返さないファイルは警告して飛ばす。
 fn diff(face: &git::Diff) -> Result<Vec<Document>> {
     let diffed = git::diff_documents(face)?;
     for path in &diffed.not_utf8 {
         eprintln!("警告: {path} は UTF-8 で符号化されていない");
+    }
+    for (path, message) in &diffed.unreadable {
+        eprintln!("警告: {path} の内容を読めない: {message}");
     }
     Ok(diffed.documents)
 }

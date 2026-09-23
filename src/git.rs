@@ -15,7 +15,7 @@ const COMMIT_PATH: &str = "<commit>";
 /// メッセージのファイルから取り出した Segment の位置の path。
 const MESSAGE_PATH: &str = "<commit-msg>";
 
-/// 範囲を持たない指定で差分の内容を読むリビジョン。
+/// 右端が空の範囲で差分の内容を読むリビジョン。
 const HEAD: &str = "HEAD";
 
 /// 文書の名前に載せるハッシュの桁数。
@@ -123,6 +123,8 @@ pub struct Diffed {
     pub documents: Vec<Document>,
     /// UTF-8 で符号化されていないため飛ばしたファイルのパス。
     pub not_utf8: Vec<String>,
+    /// 内容を読めなかったため飛ばしたファイルのパスと、git が返した理由。
+    pub unreadable: Vec<(String, String)>,
 }
 
 /// 差分が追加・変更した行に触れる Segment だけを持つ、ファイルごとの文書。索引または範囲の
@@ -152,12 +154,14 @@ pub fn diff_documents(diff: &Diff) -> Result<Diffed> {
     let mut diffed = Diffed {
         documents: Vec::new(),
         not_utf8: Vec::new(),
+        unreadable: Vec::new(),
     };
     for change in changes(&output) {
         match change_document(&change, rev, commit.as_deref())? {
             Changed::Document(document) => diffed.documents.push(document),
             Changed::Skipped => {}
             Changed::NotUtf8 => diffed.not_utf8.push(change.path),
+            Changed::Unreadable(message) => diffed.unreadable.push((change.path, message)),
         }
     }
     Ok(diffed)
@@ -256,9 +260,12 @@ enum Changed {
     Skipped,
     /// UTF-8 で符号化されていない。
     NotUtf8,
+    /// git が内容を返さなかった。値はその理由。
+    Unreadable(String),
 }
 
-/// 触れた Segment だけを残した 1 ファイルの文書。
+/// 触れた Segment だけを残した 1 ファイルの文書。git がファイルの内容を返さなければ、その
+/// ファイルだけを飛ばす。
 fn change_document(change: &Change, rev: Option<&str>, commit: Option<&str>) -> Result<Changed> {
     let path = Path::new(&change.path);
     if !input::has_format(path) {
@@ -268,8 +275,11 @@ fn change_document(change: &Change, rev: Option<&str>, commit: Option<&str>) -> 
         Some(rev) => format!("{rev}:{}", change.path),
         None => format!(":{}", change.path),
     };
-    let Some(content) = blob(&spec)? else {
-        return Ok(Changed::NotUtf8);
+    let content = match blob(&spec) {
+        Ok(Some(content)) => content,
+        Ok(None) => return Ok(Changed::NotUtf8),
+        Err(Error::Failed { message, .. }) => return Ok(Changed::Unreadable(message)),
+        Err(error) => return Err(error),
     };
     let Reading::Document(mut document) =
         input::extract_document(change.path.clone(), path, &content)
