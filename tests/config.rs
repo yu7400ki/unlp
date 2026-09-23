@@ -145,7 +145,7 @@ fn a_word_added_to_a_list_is_matched() {
 }
 
 #[test]
-fn a_word_removed_from_a_list_is_not_matched() {
+fn a_sentence_becomes_a_finding_when_its_word_leaves_the_list() {
     let dir = dir_with(
         "[lists.S01.person]\nremove = [\"者\"]\n",
         &[("a.txt", "利用者が述べる。")],
@@ -221,4 +221,53 @@ fn an_excluded_path_named_on_the_command_line_is_warned() {
         .assert()
         .success()
         .stderr("");
+}
+
+#[test]
+fn the_globs_follow_the_directory_of_the_given_config() {
+    let dir = dir_with("exclude = [\"a.txt\"]\n", &[("a.txt", "残る文だ。")]);
+    let other = dir_with("exclude = [\"a.txt\"]\n", &[("a.txt", "除かれる文だ。")]);
+    let report = json(
+        unlp(dir.path())
+            .args(["check", ".", "--json"])
+            .arg(other.path())
+            .arg("--config")
+            .arg(other.path().join("unlp.toml")),
+    );
+    assert_eq!(names(&report), ["./a.txt"], "{report}");
+}
+
+#[test]
+fn only_the_first_path_chooses_the_config() {
+    let first = dir_with(
+        "exclude = [\"a.txt\"]\n",
+        &[("a.txt", "除かれる文だ。"), ("b.txt", "残る文だ。")],
+    );
+    let second = dir_with("exclude = [\"c.txt\"]\n", &[("c.txt", "残る文だ。")]);
+    let report = json(
+        unlp(first.path())
+            .args(["check", ".", "--json"])
+            .arg(second.path()),
+    );
+    let names = names(&report);
+    assert_eq!(names.len(), 2, "{report}");
+    assert!(names.contains(&"./b.txt".to_string()), "{report}");
+    assert!(names.iter().any(|name| name.ends_with("c.txt")), "{report}");
+}
+
+#[test]
+fn the_weights_in_the_config_turn_the_exit_code_over() {
+    let document = document();
+    let over = dir_with("[weights]\nS01 = 6.0\n", &[("a.txt", &document)]);
+    let within = dir_with("", &[("a.txt", &document)]);
+    unlp(over.path())
+        .args(["check", ".", "--fail-over=15"])
+        .assert()
+        .code(1)
+        .stdout(contains("正規化 20.0 点"));
+    unlp(within.path())
+        .args(["check", ".", "--fail-over=15"])
+        .assert()
+        .success()
+        .stdout(contains("正規化 10.0 点"));
 }
