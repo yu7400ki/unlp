@@ -8,9 +8,8 @@ use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 use unlp::extract::{self, STDIN_NAME};
 use unlp::morph::Analyzer;
-use unlp::score::{
-    DEFAULT_FLOOR, DEFAULT_THRESHOLD, DocumentScore, Report, Score, ScoreMode, Total,
-};
+use unlp::score::{DocumentScore, Report, Score, ScoreMode, Total};
+use unlp::settings::Settings;
 use unlp::{Document, Finding, Layer, git, input, rule};
 
 /// 日本語の文章に残る AI の癖を検出して採点する。
@@ -136,9 +135,10 @@ fn main() -> ExitCode {
 
 fn run() -> Result<bool> {
     let cli = Cli::parse();
+    let settings = Settings::default();
     let documents = match &cli.command {
         Command::Rules => {
-            print_rules();
+            print_rules(&settings);
             return Ok(false);
         }
         Command::Check { paths } => check(paths)?,
@@ -165,20 +165,20 @@ fn run() -> Result<bool> {
     let mut scores = Vec::new();
     for document in &documents {
         let sentences = analyzer.analyze_document(document);
-        let context = rule::Context::for_document(&sentences);
-        let findings = rule::check(&sentences, &context, DEFAULT_FLOOR);
+        let context = rule::Context::for_document(&sentences, &settings);
+        let findings = rule::check(&sentences, &context, settings.floor());
         scores.push(DocumentScore {
             name: document.name.clone(),
             score: Score::new(
                 &sentences,
                 findings,
                 context.measures().clone(),
-                DEFAULT_FLOOR,
+                settings.floor(),
                 context.weights(),
             ),
         });
     }
-    let mut report = Report::new(scores, DEFAULT_FLOOR, rule::default_weights());
+    let mut report = Report::new(scores, settings.floor(), settings.weights());
     if cli.options.summary {
         report.forget_findings();
     }
@@ -188,16 +188,19 @@ fn run() -> Result<bool> {
     } else {
         print_report(&report);
     }
-    let fail_over = cli.options.fail_over.or(default_fail_over(&cli.command));
+    let fail_over = cli
+        .options
+        .fail_over
+        .or(default_fail_over(&cli.command, &settings));
     Ok(fail_over.is_some_and(|point| report.exceeds(point)))
 }
 
-/// `--fail-over` を指定しないときのしきい値。関門は既定のしきい値で判断する。
-fn default_fail_over(command: &Command) -> Option<f64> {
+/// `--fail-over` を指定しないときのしきい値。関門は設定のしきい値で判断する。
+fn default_fail_over(command: &Command, settings: &Settings) -> Option<f64> {
     match command {
         Command::Hook {
             command: HookCommand::CommitMsg { .. },
-        } => Some(DEFAULT_THRESHOLD),
+        } => Some(settings.threshold()),
         _ => None,
     }
 }
@@ -303,9 +306,10 @@ fn print_findings(findings: &[Finding]) {
 }
 
 /// 規則の ID、層、重み、規則集の見出しを 1 行ずつ出力する。
-fn print_rules() {
+fn print_rules(settings: &Settings) {
     for (rule, anchor) in rule::registered() {
-        let weight = rule::default_weights()
+        let weight = settings
+            .weights()
             .get(&rule)
             .copied()
             .expect("一覧にある規則には既定の重みがある");

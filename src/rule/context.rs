@@ -1,72 +1,19 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::LazyLock;
+
+use serde::Deserialize;
 
 use crate::measure::{FinalPredicates, Measurement, Measures};
-use crate::rule::{Layer, RuleId};
+use crate::rule::RuleId;
 use crate::sentence::Sentence;
-
-const WEIGHTS: &str = include_str!("../../data/weights.toml");
-
-const LISTS: [(RuleId, &str); 9] = [
-    (
-        RuleId::new(Layer::Structure, 1),
-        include_str!("../../data/lists/S01.toml"),
-    ),
-    (
-        RuleId::new(Layer::Structure, 3),
-        include_str!("../../data/lists/S03.toml"),
-    ),
-    (
-        RuleId::new(Layer::Structure, 6),
-        include_str!("../../data/lists/S06.toml"),
-    ),
-    (
-        RuleId::new(Layer::Lexical, 1),
-        include_str!("../../data/lists/L01.toml"),
-    ),
-    (
-        RuleId::new(Layer::Lexical, 2),
-        include_str!("../../data/lists/L02.toml"),
-    ),
-    (
-        RuleId::new(Layer::Register, 1),
-        include_str!("../../data/lists/R01.toml"),
-    ),
-    (
-        RuleId::new(Layer::Register, 2),
-        include_str!("../../data/lists/R02.toml"),
-    ),
-    (
-        RuleId::new(Layer::Formulaic, 1),
-        include_str!("../../data/lists/F01.toml"),
-    ),
-    (
-        RuleId::new(Layer::Formulaic, 5),
-        include_str!("../../data/lists/F05.toml"),
-    ),
-];
+use crate::settings::Settings;
 
 /// 敬体の文書として扱う敬体率の下限。
 const POLITE: f64 = 0.5;
 
 static EMPTY: WordList = WordList(BTreeMap::new());
 
-static DEFAULT_WEIGHTS: LazyLock<BTreeMap<RuleId, f64>> = LazyLock::new(|| weights(WEIGHTS));
-
-static DEFAULT_LISTS: LazyLock<BTreeMap<RuleId, WordList>> = LazyLock::new(|| {
-    LISTS
-        .into_iter()
-        .map(|(rule, source)| (rule, word_list(source)))
-        .collect()
-});
-
-/// 同梱した既定の、規則 ID ごとの指摘 1 件の重み。
-pub fn default_weights() -> &'static BTreeMap<RuleId, f64> {
-    &DEFAULT_WEIGHTS
-}
-
 /// 規則が照合する語。欄の名前ごとに語を保持する。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct WordList(BTreeMap<String, BTreeSet<String>>);
 
 impl WordList {
@@ -90,11 +37,11 @@ pub struct Context {
 }
 
 impl Context {
-    /// 文書の文の列を計測し、同梱した既定の重みと語リストを添える。
-    pub fn for_document(sentences: &[Sentence]) -> Self {
+    /// 文書の文の列を計測し、設定の重みと語リストを添える。
+    pub fn for_document(sentences: &[Sentence], settings: &Settings) -> Self {
         Self {
-            weights: DEFAULT_WEIGHTS.clone(),
-            lists: DEFAULT_LISTS.clone(),
+            weights: settings.weights().clone(),
+            lists: settings.lists().clone(),
             measurement: Measurement::of(sentences),
         }
     }
@@ -141,26 +88,10 @@ impl Context {
     }
 }
 
-fn weights(source: &str) -> BTreeMap<RuleId, f64> {
-    let table: BTreeMap<String, f64> =
-        toml::from_str(source).expect("同梱した重みは規則 ID と数の表である");
-    table
-        .into_iter()
-        .map(|(rule, weight)| {
-            let rule = rule.parse().expect("同梱した重みの鍵は規則 ID である");
-            (rule, weight)
-        })
-        .collect()
-}
-
-fn word_list(source: &str) -> WordList {
-    WordList(toml::from_str(source).expect("同梱した語リストは欄の名前と語の表である"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rule::{harness, registered};
+    use crate::rule::{Layer, harness};
 
     /// 敬体の文を `polite` 文、常体の文を `plain` 文並べた文書の Context。
     fn document(polite: usize, plain: usize) -> Context {
@@ -169,25 +100,6 @@ mod tests {
             "規則を数えます。".repeat(polite),
             "規則を数える。".repeat(plain)
         ))
-    }
-
-    #[test]
-    fn the_defaults_weigh_every_registered_rule() {
-        assert_eq!(default_weights().len(), 22);
-        for (rule, _) in registered() {
-            assert!(default_weights().contains_key(&rule), "{rule}");
-        }
-        assert_eq!(default_weights()[&RuleId::new(Layer::Structure, 1)], 3.0);
-    }
-
-    #[test]
-    fn the_defaults_carry_the_words_of_the_rules() {
-        let context = document(0, 1);
-        let list = context.list(RuleId::new(Layer::Structure, 1));
-        assert!(list.contains("person", "利用者"));
-        assert!(list.contains("speech", "述べる"));
-        assert!(!list.contains("speech", "言う"));
-        assert!(!list.contains("person", "述べる"));
     }
 
     #[test]

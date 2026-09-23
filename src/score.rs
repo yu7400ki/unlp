@@ -6,12 +6,6 @@ use crate::measure::Measures;
 use crate::rule::{Finding, Layer, RuleId};
 use crate::sentence::{self, Sentence};
 
-/// 正規化した点で採点する日本語文字数の下限。
-pub const DEFAULT_FLOOR: usize = 300;
-
-/// 超過と判断する既定のしきい値。
-pub const DEFAULT_THRESHOLD: f64 = 10.0;
-
 /// 入力全体の結果。
 #[derive(Debug, Clone, Serialize)]
 pub struct Report {
@@ -258,6 +252,12 @@ mod tests {
     use super::*;
     use crate::document::{LineRange, Origin, Segment, SegmentKind};
     use crate::sentence::split_sentences;
+    use crate::settings::Settings;
+
+    /// 採点に渡す日本語文字数の下限。
+    fn floor() -> usize {
+        Settings::default().floor()
+    }
 
     fn segment(text: &str) -> Segment {
         Segment {
@@ -293,7 +293,7 @@ mod tests {
             &split_sentences(&segment),
             findings,
             Measures::default(),
-            DEFAULT_FLOOR,
+            floor(),
             &weights(),
         )
     }
@@ -314,8 +314,8 @@ mod tests {
 
     #[test]
     fn floor_switches_mode() {
-        let below = "あ".repeat(DEFAULT_FLOOR - 1);
-        let at = "あ".repeat(DEFAULT_FLOOR);
+        let below = "あ".repeat(floor() - 1);
+        let at = "あ".repeat(floor());
         assert!(matches!(
             score(&below, Vec::new()).mode(),
             ScoreMode::CountOnly
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn a_document_without_findings_holds_a_positive_zero() {
-        let score = score(&"あ".repeat(DEFAULT_FLOOR), Vec::new());
+        let score = score(&"あ".repeat(floor()), Vec::new());
         let ScoreMode::Normalized { per_1000, by_layer } = score.mode() else {
             panic!("{:?}", score.mode());
         };
@@ -374,7 +374,7 @@ mod tests {
 
     #[test]
     fn normalized_compares_the_point_with_the_threshold() {
-        let text = "あ".repeat(DEFAULT_FLOOR);
+        let text = "あ".repeat(floor());
         assert!(!score(&text, Vec::new()).exceeds(0.0));
 
         let score = score(&text, vec![finding(Layer::Structure, 1)]);
@@ -416,7 +416,7 @@ mod tests {
                     score: score(&"い".repeat(200), vec![finding(Layer::Structure, 1)]),
                 },
             ],
-            DEFAULT_FLOOR,
+            floor(),
             &weights(),
         );
         assert!(matches!(

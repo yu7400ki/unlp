@@ -37,7 +37,7 @@ mod s05;
 mod s06;
 mod surface;
 
-pub use context::{Context, WordList, default_weights};
+pub use context::{Context, WordList};
 
 /// 規則集。
 const RULES: &str = include_str!("../skills/unlp/reference/rules.md");
@@ -307,6 +307,7 @@ fn applies_below_floor(layer: Layer) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::Settings;
 
     #[test]
     fn a_rule_id_is_read_back_from_its_text() {
@@ -335,7 +336,7 @@ mod tests {
 
     #[test]
     fn every_weighted_rule_has_a_heading() {
-        for rule in default_weights().keys() {
+        for rule in Settings::default().weights().keys() {
             assert!(doc_heading(&rule.to_string()).is_some(), "{rule}");
         }
     }

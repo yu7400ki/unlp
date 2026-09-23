@@ -311,7 +311,7 @@ mod tests {
     use super::*;
     use crate::morph::Analyzer;
     use crate::rule::Context;
-    use crate::score::DEFAULT_FLOOR;
+    use crate::settings::Settings;
 
     static ANALYZER: LazyLock<Analyzer> = LazyLock::new(|| Analyzer::new().unwrap());
 
@@ -330,8 +330,9 @@ mod tests {
     fn rules(markdown: &str) -> Vec<String> {
         let document = document(markdown);
         let sentences = ANALYZER.analyze_document(&document);
-        let context = Context::for_document(&sentences);
-        crate::rule::check(&sentences, &context, DEFAULT_FLOOR)
+        let settings = Settings::default();
+        let context = Context::for_document(&sentences, &settings);
+        crate::rule::check(&sentences, &context, settings.floor())
             .iter()
             .map(|finding| finding.rule().to_string())
             .collect()

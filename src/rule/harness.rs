@@ -5,6 +5,7 @@ use crate::document::{Document, LineRange, Origin, Segment, SegmentKind};
 use crate::morph::Analyzer;
 use crate::rule::{Context, DocumentRule, Finding, SentenceRule};
 use crate::sentence::Sentence;
+use crate::settings::Settings;
 
 static ANALYZER: LazyLock<Analyzer> = LazyLock::new(|| Analyzer::new().unwrap());
 
@@ -13,13 +14,15 @@ const POLITE: &str = "規則を数えます。";
 
 /// 同梱した辞書で解析した文から作った Context。
 pub fn context(text: &str) -> Context {
-    with_sentences(text, Context::for_document)
+    with_sentences(text, |sentences| {
+        Context::for_document(sentences, &Settings::default())
+    })
 }
 
 /// 同梱した辞書で解析した文に規則を適用し、指摘の抜粋を返す。
 pub fn excerpts(rule: &dyn SentenceRule, text: &str) -> Vec<String> {
     with_sentences(text, |sentences| {
-        let context = Context::for_document(sentences);
+        let context = Context::for_document(sentences, &Settings::default());
         excerpts_of_sentences(rule, sentences, &context)
     })
 }
@@ -44,7 +47,7 @@ pub fn document_excerpts(rule: &dyn DocumentRule, text: &str) -> Vec<String> {
 /// `document_excerpts` の、Segment を分けて渡す形。
 pub fn document_excerpts_of(rule: &dyn DocumentRule, texts: &[&str]) -> Vec<String> {
     with_segments(texts, |sentences| {
-        let context = Context::for_document(sentences);
+        let context = Context::for_document(sentences, &Settings::default());
         excerpts_of(rule.check(sentences, &context))
     })
 }
