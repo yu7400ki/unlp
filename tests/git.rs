@@ -526,3 +526,36 @@ fn uninstalling_removes_only_the_hook_it_installed() {
     repo.unlp().args(["hook", "uninstall"]).assert().success();
     assert!(!repo.path().join(".git/hooks/commit-msg").exists());
 }
+
+/// 日本語 21 字の文を並べて、コミットメッセージを 300 字以上にする。
+const MESSAGE_FILLER: &str = "この文はここでは十分に長く書いてある一文だ。";
+
+/// 310 字で S01 の指摘を 2 件持つメッセージ。既定の重みでは 1000 字あたり 19.4 点になる。
+fn long_message() -> String {
+    format!(
+        "chore: 記録する\n{}型の doc が名乗る。型の doc が名乗る。\n",
+        MESSAGE_FILLER.repeat(14)
+    )
+}
+
+#[test]
+fn the_threshold_in_the_config_decides_the_hook() {
+    let repo = Repo::new();
+    repo.write("doc.md", "初めの段落だ。\n");
+    repo.git(&["add", "."]);
+    repo.commit("chore: init\n");
+    repo.write(".git/MESSAGE", &long_message());
+
+    repo.unlp()
+        .args(["hook", "commit-msg", ".git/MESSAGE"])
+        .assert()
+        .code(1)
+        .stdout(contains("正規化 19.4 点"));
+
+    repo.write("unlp.toml", "threshold = 50\n");
+    repo.unlp()
+        .args(["hook", "commit-msg", ".git/MESSAGE"])
+        .assert()
+        .success()
+        .stdout(contains("正規化 19.4 点"));
+}

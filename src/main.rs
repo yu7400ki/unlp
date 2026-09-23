@@ -120,6 +120,9 @@ struct Options {
     /// 点がしきい値を超えたら終了コード 1 を返す
     #[arg(long, value_name = "POINT", global = true)]
     fail_over: Option<f64>,
+    /// 読み込む設定のファイル
+    #[arg(long, value_name = "PATH", global = true)]
+    config: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -135,7 +138,7 @@ fn main() -> ExitCode {
 
 fn run() -> Result<bool> {
     let cli = Cli::parse();
-    let settings = Settings::default();
+    let settings = Settings::load(cli.options.config.as_deref(), &config_start(&cli.command))?;
     let documents = match &cli.command {
         Command::Rules => {
             print_rules(&settings);
@@ -193,6 +196,15 @@ fn run() -> Result<bool> {
         .fail_over
         .or(default_fail_over(&cli.command, &settings));
     Ok(fail_over.is_some_and(|point| report.exceeds(point)))
+}
+
+/// 設定ファイルを探索する起点。`check` は最初の対象のパス、他の面は現在のディレクトリ。
+fn config_start(command: &Command) -> PathBuf {
+    let current = || PathBuf::from(".");
+    match command {
+        Command::Check { paths } => paths.first().cloned().unwrap_or_else(current),
+        _ => current(),
+    }
 }
 
 /// `--fail-over` を指定しないときのしきい値。関門は設定のしきい値で判断する。
