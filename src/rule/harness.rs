@@ -46,7 +46,15 @@ pub fn document_excerpts(rule: &dyn DocumentRule, text: &str) -> Vec<String> {
 
 /// `document_excerpts` の、Segment を分けて渡す形。
 pub fn document_excerpts_of(rule: &dyn DocumentRule, texts: &[&str]) -> Vec<String> {
-    with_segments(texts, |sentences| {
+    document_excerpts_of_kinds(rule, &prose(texts))
+}
+
+/// `document_excerpts` の、Segment ごとに面を指定する形。
+pub fn document_excerpts_of_kinds(
+    rule: &dyn DocumentRule,
+    segments: &[(SegmentKind, &str)],
+) -> Vec<String> {
+    with_kinds(segments, |sentences| {
         let context = Context::for_document(sentences, &Settings::default());
         excerpts_of(rule.check(sentences, &context))
     })
@@ -79,14 +87,29 @@ pub fn with_sentences<T>(text: &str, read: impl FnOnce(&[Sentence]) -> T) -> T {
 
 /// 文字列ごとに Segment を分けた文書を解析し、その文を渡す。
 pub fn with_segments<T>(texts: &[&str], read: impl FnOnce(&[Sentence]) -> T) -> T {
+    with_kinds(&prose(texts), read)
+}
+
+/// 面と文字列の組ごとに Segment を分けた文書を解析し、その文を渡す。
+fn with_kinds<T>(segments: &[(SegmentKind, &str)], read: impl FnOnce(&[Sentence]) -> T) -> T {
     let document = Document {
         name: "t".to_string(),
-        segments: texts.iter().map(|text| segment(text)).collect(),
+        segments: segments
+            .iter()
+            .map(|(kind, text)| segment(*kind, text))
+            .collect(),
     };
     read(&ANALYZER.analyze_document(&document))
 }
 
-fn segment(text: &str) -> Segment {
+fn prose<'a>(texts: &[&'a str]) -> Vec<(SegmentKind, &'a str)> {
+    texts
+        .iter()
+        .map(|text| (SegmentKind::Prose, *text))
+        .collect()
+}
+
+fn segment(kind: SegmentKind, text: &str) -> Segment {
     Segment {
         text: text.to_string(),
         origin: Origin {
@@ -94,6 +117,6 @@ fn segment(text: &str) -> Segment {
             lines: LineRange::new(NonZeroU32::MIN, NonZeroU32::MIN).unwrap(),
             commit: None,
         },
-        kind: SegmentKind::Prose,
+        kind,
     }
 }

@@ -11,6 +11,7 @@ mod context;
 mod d01;
 mod d02;
 mod d03;
+mod d04;
 mod f01;
 mod f02;
 mod f03;
@@ -247,6 +248,7 @@ pub fn document_rules() -> Vec<Box<dyn DocumentRule>> {
     vec![
         Box::new(s06::LeadingConjunction),
         Box::new(d01::ShortSentenceRun),
+        Box::new(d04::MissingCommonPhrase),
         Box::new(r03::MixedRegister),
         Box::new(g01::FinalWagoRatio),
     ]
