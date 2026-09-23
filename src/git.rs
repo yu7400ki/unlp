@@ -148,31 +148,38 @@ struct Change {
     added: Vec<LineRange>,
 }
 
-/// 差分の出力を、ファイルごとの追加・変更行の範囲に分ける。hunk は直前の見出しで読んだ
-/// ファイルに属する。
+/// ファイルごとの差分が始まる行。
+const FILE_HEADER: &str = "diff --git ";
+
+/// 差分の出力を、ファイルごとの追加・変更行の範囲に分ける。
 fn changes(diff: &str) -> Vec<Change> {
-    let mut changes: Vec<Change> = Vec::new();
-    let mut current: Option<Change> = None;
-    let mut header = false;
+    let mut files: Vec<Vec<&str>> = Vec::new();
     for line in diff.lines() {
-        if line.starts_with("--- ") {
-            changes.extend(current.take());
-            header = true;
-        } else if header {
-            header = false;
-            current = added_path(line).map(|path| Change {
-                path,
-                added: Vec::new(),
-            });
-        } else if let Some(range) = added_range(line)
-            && let Some(change) = current.as_mut()
-        {
-            change.added.push(range);
+        if line.starts_with(FILE_HEADER) {
+            files.push(Vec::new());
+        }
+        if let Some(file) = files.last_mut() {
+            file.push(line);
         }
     }
-    changes.extend(current);
-    changes.retain(|change| !change.added.is_empty());
-    changes
+    files.iter().filter_map(|file| change(file)).collect()
+}
+
+/// 1 ファイルの差分が示す、追加・変更後のパスと行範囲。パスは最初の hunk より前の見出しから
+/// 読み、行範囲は hunk の見出しから読む。`-U0` の本文の行は `+` か `-` か `\` で始まるので、
+/// 本文の行を見出しや hunk と取り違えない。
+fn change(file: &[&str]) -> Option<Change> {
+    let body = file.iter().position(|line| is_hunk(line))?;
+    let path = file[..body].iter().find_map(|line| added_path(line))?;
+    let added: Vec<LineRange> = file[body..]
+        .iter()
+        .filter_map(|line| added_range(line))
+        .collect();
+    (!added.is_empty()).then_some(Change { path, added })
+}
+
+fn is_hunk(line: &str) -> bool {
+    line.starts_with("@@ ")
 }
 
 /// 見出しが示す、追加・変更後のファイルのパス。名前に空白を含むとき git は行末に TAB を付ける。
@@ -601,7 +608,9 @@ mod tests {
             "+++ b/a.md\n",
             "@@ -1,0 +2 @@\n",
             "+挿入だ。\n",
-            "@@ -3 +4 @@\n",
+            "@@ -3 +0,0 @@\n",
+            "--- 印だ\n",
+            "@@ -5 +4 @@\n",
             "-前の行だ。\n",
             "+直した行だ。\n",
             "diff --git a/b c.md b/b c.md\n",

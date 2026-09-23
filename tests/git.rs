@@ -282,6 +282,24 @@ fn the_staged_diff_keeps_the_nodes_the_added_lines_touch() {
 }
 
 #[test]
+fn a_deleted_line_that_looks_like_a_header_keeps_the_later_hunks() {
+    let repo = Repo::new();
+    repo.write("a.md", "前の段落だ。\n\n-- 印だ\n\n後の段落だ。\n");
+    repo.git(&["add", "."]);
+    repo.commit("chore: init\n");
+    repo.write("a.md", "前の段落だ。\n\n\n直した後の段落だ。\n");
+    repo.git(&["add", "."]);
+
+    let report = json(repo.unlp().args(["diff", "--staged", "--json"]));
+    assert_eq!(names(&report), ["a.md"], "{report}");
+    assert_eq!(
+        report["total"]["ja_chars"],
+        ja_chars(["直した後の段落だ。"]),
+        "{report}"
+    );
+}
+
+#[test]
 fn a_range_of_commits_yields_the_diff_of_the_range() {
     let repo = repo_with_staged_change();
     let staged = json(repo.unlp().args(["diff", "--staged", "--json"]));
