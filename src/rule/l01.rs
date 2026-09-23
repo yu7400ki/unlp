@@ -69,6 +69,9 @@ mod tests {
         );
         assert_eq!(excerpts("ソースから建てた。"), ["ソースから建て"]);
         assert_eq!(excerpts("これがこちらのものかは照らせない。"), ["照らせ"]);
+        assert_eq!(excerpts("事前検証を掛けてから返す。"), ["検証を掛"]);
+        assert_eq!(excerpts("綴りの検査を掛ける。"), ["検査を掛"]);
+        assert_eq!(excerpts("この規則を掛ける相手を選ぶ。"), ["規則を掛"]);
     }
 
     #[test]
@@ -113,6 +116,9 @@ mod tests {
         assert!(excerpts("鍵を回す。").is_empty());
         assert!(excerpts("窓を開ける。").is_empty());
         assert!(excerpts("電話を掛ける。").is_empty());
+        assert!(excerpts("フィルタを掛ける。").is_empty());
+        assert!(excerpts("倍率を掛ける。").is_empty());
+        assert!(excerpts("鍵を掛ける。").is_empty());
         assert!(excerpts("マンションが次々と建てられる。").is_empty());
         assert!(excerpts("仕様に照らして確認する。").is_empty());
     }
