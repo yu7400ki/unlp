@@ -25,7 +25,7 @@ Claude Code の hook からは `unlp diff --staged --fail-over 10` を実行す�
 ```toml
 threshold = 10
 floor = 300
-exclude = ["tests/**", "private/**"]
+exclude = ["tests/**", "examples/**"]
 
 [weights]
 S01 = 3.0
