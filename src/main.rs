@@ -4,7 +4,7 @@ use std::io::{Read, stdin};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum, value_parser};
 use unlp::extract::{self, STDIN_NAME};
 use unlp::morph::Analyzer;
@@ -163,7 +163,7 @@ fn run() -> Result<bool> {
             print_rules(&settings);
             return Ok(false);
         }
-        Command::Bench { manifest } => return bench(manifest, &settings, cli.options.json),
+        Command::Bench { manifest } => return bench(manifest, &settings, &cli.options),
         Command::Check { paths } => check(paths, &settings)?,
         Command::Diff { face } => diff(&face.face(), &settings)?,
         Command::Commits { number, range } => git::commit_documents(&commit_range(*number, range))?,
@@ -311,9 +311,13 @@ fn check(paths: &[PathBuf], settings: &Settings) -> Result<Vec<Document>> {
     Ok(documents)
 }
 
-/// 較正のコーパスを集合ごとに採点する。
-fn bench(manifest: &Path, settings: &Settings, json: bool) -> Result<bool> {
-    let manifest = bench::Manifest::load(manifest)?;
+/// 較正のコーパスを集合ごとに採点する。較正は集合ごとの点を受け入れ基準に照らすので、
+/// 指摘の省略と点のしきい値は受け取らない。
+fn bench(path: &Path, settings: &Settings, options: &Options) -> Result<bool> {
+    if options.summary || options.fail_over.is_some() {
+        bail!("bench は --summary と --fail-over を受け付けない");
+    }
+    let manifest = bench::Manifest::load(path)?;
     let analyzer = Analyzer::new()?;
     let mut sets = Vec::new();
     for set in manifest.sets() {
@@ -321,13 +325,13 @@ fn bench(manifest: &Path, settings: &Settings, json: bool) -> Result<bool> {
         let total = report(&documents, &analyzer, settings).total().clone();
         sets.push(bench::SetScore::new(set, total));
     }
-    let report = bench::BenchReport::new(sets);
-    if json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+    let benched = bench::BenchReport::new(sets);
+    if options.json {
+        println!("{}", serde_json::to_string_pretty(&benched)?);
     } else {
-        print_bench(&report);
+        print_bench(&benched);
     }
-    Ok(!report.met())
+    Ok(!benched.met())
 }
 
 /// 集合の文書。パスは `check` と同じ経路で読み、コミットは保存した `git log` の出力から読む。

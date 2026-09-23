@@ -208,6 +208,18 @@ fn a_commits_log_is_read_without_running_git() {
 }
 
 #[test]
+fn the_bench_takes_neither_the_summary_nor_the_fail_over() {
+    let dir = corpus(BOTH_SIDES);
+    for option in [vec!["--summary"], vec!["--fail-over", "10"]] {
+        bench(&dir)
+            .args(&option)
+            .assert()
+            .code(2)
+            .stderr(contains("--summary").and(contains("--fail-over")));
+    }
+}
+
+#[test]
 fn the_floor_of_the_config_reaches_the_bench() {
     let dir = corpus(BOTH_SIDES);
     let config = dir.path().join("unlp.toml");
