@@ -27,6 +27,14 @@ enum Command {
         #[arg(required = true)]
         paths: Vec<PathBuf>,
     },
+    /// 差分が触れた Segment を検査する
+    Diff {
+        /// 索引に載せた変更を対象にする
+        #[arg(long, conflicts_with = "range")]
+        staged: bool,
+        /// コミットの範囲
+        range: Option<String>,
+    },
     /// コミットメッセージを検査する
     Commits {
         /// 直近の件数
@@ -93,6 +101,7 @@ fn run() -> Result<bool> {
             return Ok(false);
         }
         Command::Check { paths } => check(paths)?,
+        Command::Diff { staged, range } => git::diff_documents(&diff_face(*staged, range))?,
         Command::Commits { number, range } => git::commit_documents(&commit_range(*number, range))?,
         Command::Stdin { format } => {
             let text = read_stdin()?;
@@ -156,6 +165,14 @@ fn check(paths: &[PathBuf]) -> Result<Vec<Document>> {
         }
     }
     Ok(documents)
+}
+
+/// 範囲を指定しなければ索引に載せた変更を対象にする。
+fn diff_face(staged: bool, range: &Option<String>) -> git::Diff {
+    match range {
+        Some(range) if !staged => git::Diff::Range(range.clone()),
+        _ => git::Diff::Staged,
+    }
 }
 
 /// 範囲を指定しなければ直近の件数で、件数も指定しなければ直近の 1 件を対象にする。

@@ -50,9 +50,9 @@ pub enum Reading {
 
 /// ファイルを 1 つの文書として読み込む。
 pub fn read_document(path: &Path) -> Result<Reading> {
-    let Some(format) = format(path) else {
+    if !has_format(path) {
         return Ok(Reading::Unsupported);
-    };
+    }
     let bytes = fs::read(path).map_err(|source| Error::Read {
         path: path.to_path_buf(),
         source,
@@ -60,16 +60,28 @@ pub fn read_document(path: &Path) -> Result<Reading> {
     let text = String::from_utf8(bytes).map_err(|_| Error::NotUtf8 {
         path: path.to_path_buf(),
     })?;
-    let name = document_name(path);
-    let document = match format {
-        Format::Markdown => extract::markdown_document(name, &text),
-        Format::Source(lang) => extract::source_document(name, &text, lang),
-        Format::Text => extract::text_document(name, &text),
+    Ok(extract_document(document_name(path), path, &text))
+}
+
+/// パスが決める書式で文字列を 1 つの文書として抽出する。`name` が Segment の位置の path になる。
+pub fn extract_document(name: String, path: &Path, text: &str) -> Reading {
+    let Some(format) = format(path) else {
+        return Reading::Unsupported;
     };
-    Ok(match extract::with_japanese(document) {
+    let document = match format {
+        Format::Markdown => extract::markdown_document(name, text),
+        Format::Source(lang) => extract::source_document(name, text, lang),
+        Format::Text => extract::text_document(name, text),
+    };
+    match extract::with_japanese(document) {
         Some(document) => Reading::Document(document),
         None => Reading::NoJapanese,
-    })
+    }
+}
+
+/// パスが抽出の書式を持つか。
+pub fn has_format(path: &Path) -> bool {
+    format(path).is_some()
 }
 
 /// 拡張子が決める書式。大小は区別しない。`.md` と `.markdown` は Markdown、構文木から

@@ -1,4 +1,5 @@
 use std::num::NonZeroU32;
+use std::path::Path;
 use std::process::Command;
 use std::{io, result};
 
@@ -6,9 +7,13 @@ use thiserror::Error;
 
 use crate::document::{Document, LineRange, Origin, Segment, SegmentKind};
 use crate::extract;
+use crate::input::{self, Reading};
 
 /// コミットメッセージから取り出した Segment の位置の path。
 const COMMIT_PATH: &str = "<commit>";
+
+/// 範囲を持たない指定で差分の内容を読むリビジョン。
+const HEAD: &str = "HEAD";
 
 /// 文書の名前に載せるハッシュの桁数。
 const SHORT_HASH: usize = 7;
@@ -60,6 +65,145 @@ pub fn commit_documents(range: &CommitRange) -> Result<Vec<Document>> {
         documents.extend(extract::with_japanese(document));
     }
     Ok(documents)
+}
+
+/// 採点する差分の面。
+#[derive(Debug, Clone)]
+pub enum Diff {
+    /// 索引に載せた変更。
+    Staged,
+    /// git の範囲の指定。
+    Range(String),
+}
+
+/// 差分が追加・変更した行に触れる Segment だけを持つ、ファイルごとの文書。索引または範囲の
+/// 右端のリビジョンにあるファイル全体を抽出し、触れていない Segment を落とす。抽出の書式を
+/// 定めていない種類と、UTF-8 で符号化されていないファイルは飛ばす。
+pub fn diff_documents(diff: &Diff) -> Result<Vec<Document>> {
+    let mut args = vec![
+        "diff",
+        "-U0",
+        "--diff-filter=AM",
+        "--no-color",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+    ];
+    let rev = match diff {
+        Diff::Staged => {
+            args.push("--cached");
+            None
+        }
+        Diff::Range(spec) => {
+            args.push(spec);
+            Some(right_rev(spec))
+        }
+    };
+    let output = text(&args)?;
+    let commit = match &rev {
+        Some(rev) => Some(text(&["rev-parse", rev])?.trim().to_string()),
+        None => None,
+    };
+    let mut documents = Vec::new();
+    for change in changes(&output) {
+        documents.extend(change_document(&change, rev.as_deref(), commit.as_deref())?);
+    }
+    Ok(documents)
+}
+
+/// 範囲の右端のリビジョン。範囲でなければ `HEAD`。
+fn right_rev(spec: &str) -> String {
+    match spec.rsplit_once("..") {
+        Some((_, right)) if !right.is_empty() => right.to_string(),
+        _ => HEAD.to_string(),
+    }
+}
+
+/// 差分が追加・変更した行を持つファイル。
+struct Change {
+    path: String,
+    added: Vec<LineRange>,
+}
+
+/// 差分の出力を、ファイルごとの追加・変更行の範囲に分ける。
+fn changes(diff: &str) -> Vec<Change> {
+    let mut changes: Vec<Change> = Vec::new();
+    let mut header = false;
+    for line in diff.lines() {
+        match line.strip_prefix("+++ b/") {
+            Some(path) if header => changes.push(Change {
+                path: path.to_string(),
+                added: Vec::new(),
+            }),
+            _ => {
+                if let Some(range) = added_range(line)
+                    && let Some(change) = changes.last_mut()
+                {
+                    change.added.push(range);
+                }
+            }
+        }
+        header = line.starts_with("--- ");
+    }
+    changes.retain(|change| !change.added.is_empty());
+    changes
+}
+
+/// hunk の見出しが示す、追加・変更後の行範囲。追加した行が無い hunk は `None`。
+fn added_range(line: &str) -> Option<LineRange> {
+    let (spec, _) = line.strip_prefix("@@ ")?.split_once(" @@")?;
+    let added = spec
+        .split_whitespace()
+        .find_map(|part| part.strip_prefix('+'))?;
+    let (start, count) = match added.split_once(',') {
+        Some((start, count)) => (start.parse::<u32>().ok()?, count.parse::<u32>().ok()?),
+        None => (added.parse::<u32>().ok()?, 1),
+    };
+    let start = NonZeroU32::new(start)?;
+    let end = NonZeroU32::new(start.get() + count.checked_sub(1)?)?;
+    LineRange::new(start, end)
+}
+
+/// 触れた Segment だけを残した 1 ファイルの文書。
+fn change_document(
+    change: &Change,
+    rev: Option<&str>,
+    commit: Option<&str>,
+) -> Result<Option<Document>> {
+    let path = Path::new(&change.path);
+    if !input::has_format(path) {
+        return Ok(None);
+    }
+    let spec = match rev {
+        Some(rev) => format!("{rev}:{}", change.path),
+        None => format!(":{}", change.path),
+    };
+    let Some(content) = blob(&spec)? else {
+        return Ok(None);
+    };
+    let Reading::Document(mut document) =
+        input::extract_document(change.path.clone(), path, &content)
+    else {
+        return Ok(None);
+    };
+    document
+        .segments
+        .retain(|segment| touches(&change.added, segment.origin.lines));
+    for segment in &mut document.segments {
+        segment.origin.commit = commit.map(str::to_string);
+    }
+    Ok(extract::with_japanese(document))
+}
+
+/// 索引または指定したリビジョンにあるファイルの内容。UTF-8 で符号化されていなければ `None`。
+fn blob(spec: &str) -> Result<Option<String>> {
+    Ok(String::from_utf8(run(&["show", spec])?).ok())
+}
+
+/// 追加・変更行のどれかが行範囲に重なるか。
+fn touches(added: &[LineRange], lines: LineRange) -> bool {
+    added
+        .iter()
+        .any(|added| added.start() <= lines.end() && lines.start() <= added.end())
 }
 
 /// `%H%x00%B%x00` の並びを、ハッシュとメッセージの対にする。
@@ -310,6 +454,69 @@ mod tests {
     fn an_empty_message_has_no_segments() {
         assert!(texts("").is_empty());
         assert!(texts("# 案内の行だけだ\n\n").is_empty());
+    }
+
+    #[test]
+    fn a_hunk_yields_the_range_of_the_added_lines() {
+        let range =
+            |line: &str| added_range(line).map(|range| (range.start().get(), range.end().get()));
+        assert_eq!(range("@@ -1,0 +2 @@"), Some((2, 2)));
+        assert_eq!(range("@@ -3 +4 @@ fn f()"), Some((4, 4)));
+        assert_eq!(range("@@ -1,2 +5,3 @@"), Some((5, 7)));
+        assert_eq!(range("@@ -2,1 +1,0 @@"), None);
+        assert_eq!(range("+@@ -1 +1 @@"), None);
+        assert_eq!(range("+行だ。"), None);
+    }
+
+    #[test]
+    fn the_diff_lists_the_added_lines_of_each_file() {
+        let diff = concat!(
+            "diff --git a/a.md b/a.md\n",
+            "index 1..2 100644\n",
+            "--- a/a.md\n",
+            "+++ b/a.md\n",
+            "@@ -1,0 +2 @@\n",
+            "+挿入だ。\n",
+            "@@ -3 +4 @@\n",
+            "-前の行だ。\n",
+            "+直した行だ。\n",
+            "diff --git a/b.md b/b.md\n",
+            "--- a/b.md\n",
+            "+++ b/b.md\n",
+            "@@ -1 +1 @@\n",
+            "-前だ。\n",
+            "++++ b/c.md\n",
+            "diff --git a/c.txt b/c.txt\n",
+            "--- a/c.txt\n",
+            "+++ b/c.txt\n",
+            "@@ -1 +0,0 @@\n",
+            "-消した行だ。\n",
+        );
+        let changes = changes(diff);
+        let ranges: Vec<(&str, Vec<(u32, u32)>)> = changes
+            .iter()
+            .map(|change| {
+                let added = change
+                    .added
+                    .iter()
+                    .map(|range| (range.start().get(), range.end().get()))
+                    .collect();
+                (change.path.as_str(), added)
+            })
+            .collect();
+        assert_eq!(
+            ranges,
+            [("a.md", vec![(2, 2), (4, 4)]), ("b.md", vec![(1, 1)])]
+        );
+    }
+
+    #[test]
+    fn the_right_side_of_the_range_holds_the_contents() {
+        assert_eq!(right_rev("HEAD~1..HEAD"), "HEAD");
+        assert_eq!(right_rev("main..topic"), "topic");
+        assert_eq!(right_rev("main...topic"), "topic");
+        assert_eq!(right_rev("HEAD~2.."), "HEAD");
+        assert_eq!(right_rev("HEAD~2"), "HEAD");
     }
 
     #[test]

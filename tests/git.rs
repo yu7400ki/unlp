@@ -99,6 +99,89 @@ fn names(report: &Value) -> Vec<String> {
         .collect()
 }
 
+/// コミットのハッシュを除いた結果。面が違っても一致するかを比べるために使う。
+fn without_commits(mut value: Value) -> Value {
+    match &mut value {
+        Value::Object(map) => {
+            map.remove("commit");
+            for field in map.values_mut() {
+                *field = without_commits(field.take());
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                *item = without_commits(item.take());
+            }
+        }
+        _ => {}
+    }
+    value
+}
+
+const LIB_BEFORE: &str = concat!(
+    "// 触らない行のコメントだ。\n",
+    "fn kept() {}\n",
+    "\n",
+    "// 複数行にわたる説明の一行目だ。\n",
+    "// 二行目は直す対象になる。\n",
+    "fn changed() {}\n",
+);
+
+const LIB_AFTER: &str = concat!(
+    "// 触らない行のコメントだ。\n",
+    "fn kept() {}\n",
+    "\n",
+    "// 複数行にわたる説明の一行目だ。\n",
+    "// 二行目を直した。\n",
+    "fn changed() {}\n",
+    "\n",
+    "// 追加した行のコメントだ。\n",
+    "fn added() {}\n",
+);
+
+const DOC_BEFORE: &str = concat!(
+    "# 見出しだ\n",
+    "\n",
+    "触らない段落だ。\n",
+    "\n",
+    "複数行の段落の一行目だ。\n",
+    "二行目は直す対象になる。\n",
+);
+
+const DOC_AFTER: &str = concat!(
+    "# 見出しだ\n",
+    "\n",
+    "触らない段落だ。\n",
+    "\n",
+    "複数行の段落の一行目だ。\n",
+    "二行目を直した。\n",
+    "\n",
+    "追加した段落だ。\n",
+);
+
+/// 差分に残る Segment。触った行に重なるノードだけが対象になる。
+const TOUCHED: [&str; 4] = [
+    "複数行の段落の一行目だ。二行目を直した。",
+    "追加した段落だ。",
+    "複数行にわたる説明の一行目だ。二行目を直した。",
+    "追加した行のコメントだ。",
+];
+
+/// 初期のコミットを持ち、変更を索引に載せたリポジトリ。
+fn repo_with_staged_change() -> Repo {
+    let repo = Repo::new();
+    repo.write("src/lib.rs", LIB_BEFORE);
+    repo.write("doc.md", DOC_BEFORE);
+    repo.write("config.toml", "値 = \"設定の文だ。\"\n");
+    repo.git(&["add", "."]);
+    repo.commit("chore: init\n");
+
+    repo.write("src/lib.rs", LIB_AFTER);
+    repo.write("doc.md", DOC_AFTER);
+    repo.write("config.toml", "値 = \"直した設定の文だ。\"\n");
+    repo.git(&["add", "."]);
+    repo
+}
 #[test]
 fn commits_score_the_messages_without_the_trailers() {
     let repo = Repo::new();
@@ -169,4 +252,25 @@ fn commits_beyond_the_first_one_are_an_error_of_git() {
         .assert()
         .code(2)
         .stderr(contains("HEAD~99..HEAD"));
+}
+
+#[test]
+fn the_staged_diff_keeps_the_nodes_the_added_lines_touch() {
+    let repo = repo_with_staged_change();
+    let report = json(repo.unlp().args(["diff", "--staged", "--json"]));
+    assert_eq!(names(&report), ["doc.md", "src/lib.rs"], "{report}");
+    assert_eq!(report["total"]["ja_chars"], ja_chars(TOUCHED), "{report}");
+}
+
+#[test]
+fn a_range_of_commits_yields_the_diff_of_the_range() {
+    let repo = repo_with_staged_change();
+    let staged = json(repo.unlp().args(["diff", "--staged", "--json"]));
+    repo.commit("chore: 変更を記録する\n");
+    let range = json(repo.unlp().args(["diff", "HEAD~1..HEAD", "--json"]));
+    assert_eq!(
+        without_commits(range.clone()),
+        without_commits(staged),
+        "{range}"
+    );
 }
