@@ -303,13 +303,15 @@ fn the_commit_msg_hook_stops_a_message_with_a_finding() {
         .args(["hook", "commit-msg", ".git/MESSAGE"])
         .assert()
         .code(1)
-        .stdout(contains("S01"));
+        .stdout(contains("S01"))
+        .stdout(contains("src/lib.rs"));
 
     repo.write(".git/MESSAGE", "chore: 変更を記録する\n");
     repo.unlp()
         .args(["hook", "commit-msg", ".git/MESSAGE"])
         .assert()
-        .success();
+        .success()
+        .stdout(contains("src/lib.rs"));
 }
 
 #[test]
