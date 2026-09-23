@@ -62,8 +62,8 @@ fn kinds(lang: SupportLang) -> Option<&'static [(&'static str, Face)]> {
     })
 }
 
-/// ソースコードのコメントと文字列リテラルを Segment とする文書。日本語を含まない Segment は
-/// 持たない。
+/// ソースコードのコメントと文字列リテラルのうち、日本語を含むものを Segment とする文書。
+/// Rust では `#[cfg(test)]` が付いた項目の外にあるものを対象とする。
 pub fn source_document(name: String, text: &str, lang: SourceLang) -> Document {
     let SourceLang { lang, kinds } = lang;
     let root = lang.ast_grep(text);
@@ -258,7 +258,8 @@ fn placeholder(text: &str) -> Option<usize> {
     }
 }
 
-/// `{` で囲んだ差し込みのバイト長。括弧、空白、引用符を挟むものは差し込みにしない。
+/// `{` で囲んだ差し込みのバイト長。中身が括弧、空白、引用符のいずれも挟まないものを差し込み
+/// とする。
 fn braced(text: &str) -> Option<usize> {
     let rest = text.strip_prefix('{')?;
     let end = rest.find('}')?;
@@ -364,7 +365,7 @@ fn outermost(mut parts: Vec<Part>) -> Vec<Part> {
     parts
 }
 
-/// Part を Segment にする。日本語を含まないものは返さない。
+/// 日本語を含む Part を Segment にする。
 fn segments(parts: Vec<Part>, name: &str, lines: &Lines) -> Vec<Segment> {
     let mut segments: Vec<Segment> = Vec::new();
     for part in parts {
