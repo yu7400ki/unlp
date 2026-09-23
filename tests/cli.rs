@@ -1,11 +1,30 @@
 use std::fs;
+use std::sync::LazyLock;
 
 use assert_cmd::Command;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::str::contains;
 use serde_json::Value;
+use tempfile::TempDir;
 
+/// 欄を持たない設定のファイル。同梱した既定だけで採点させるために渡す。
+static EMPTY_CONFIG: LazyLock<TempDir> = LazyLock::new(|| {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("unlp.toml"), "").unwrap();
+    dir
+});
+
+/// 同梱した既定の設定で実行するコマンド。
 fn unlp() -> Command {
+    let mut command = repo_unlp();
+    command
+        .arg("--config")
+        .arg(EMPTY_CONFIG.path().join("unlp.toml"));
+    command
+}
+
+/// このリポジトリの設定を読んで実行するコマンド。
+fn repo_unlp() -> Command {
     Command::cargo_bin("unlp").unwrap()
 }
 
@@ -123,7 +142,7 @@ fn rules_lists_the_rule_with_its_layer_weight_and_heading() {
 
 #[test]
 fn the_rule_book_has_no_findings() {
-    let report = json(unlp().args(["check", "skills/", "--json"]));
+    let report = json(repo_unlp().args(["check", "skills/", "--json"]));
     let by_rule = report["total"]["by_rule"].as_object().unwrap();
     assert!(by_rule.is_empty(), "{by_rule:?}");
 }
@@ -470,7 +489,7 @@ fn a_plain_document_leaves_the_colloquialisms_and_the_hedges_alone() {
 
 #[test]
 fn the_rule_book_stays_within_the_wago_ratio() {
-    let report = json(unlp().args(["check", "skills/", "--json"]));
+    let report = json(repo_unlp().args(["check", "skills/", "--json"]));
     let score = &report["documents"][0]["score"];
     assert_eq!(score["mode"]["kind"], "normalized", "{score}");
     assert!(
