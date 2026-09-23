@@ -231,7 +231,10 @@ fn blanks(text: &mut String, length: usize) {
 /// コメントの記号を除いた本文。行をまたぐコメントは 1 行ずつ記号を除いて連ねる。
 fn comment_body(text: &str) -> String {
     let inner = match text.strip_prefix("/*") {
-        Some(inner) => inner.strip_suffix("*/").unwrap_or(inner),
+        Some(inner) => {
+            let inner = inner.strip_prefix('!').unwrap_or(inner);
+            inner.strip_suffix("*/").unwrap_or(inner)
+        }
         None => text,
     };
     let mut body = String::with_capacity(inner.len());
@@ -333,7 +336,9 @@ fn segment_kind(lang: SupportLang, node: &Node<StrDoc<SupportLang>>, face: Face)
         (SupportLang::Rust, Face::Comment) => {
             let text = node.text();
             doc_or(
-                text.starts_with("///") || text.starts_with("//!"),
+                ["///", "//!", "/**", "/*!"]
+                    .iter()
+                    .any(|marker| text.starts_with(marker)),
                 SegmentKind::Comment,
             )
         }
@@ -561,6 +566,31 @@ mod tests {
                 "fn f() { let s = \"{ 空白を挟む } のは差し込みでない。\"; }\n"
             ),
             ["{ 空白を挟む } のは差し込みでない。"]
+        );
+    }
+
+    #[test]
+    fn a_block_comment_of_rust_is_a_doc_when_it_opens_with_a_star_or_a_bang() {
+        let source = concat!(
+            "/*! 内側の doc だ。 */\n",
+            "\n",
+            "/** 外側の doc だ。 */\n",
+            "mod a {}\n",
+            "\n",
+            "/* ただのブロックだ。 */\n",
+            "mod b {}\n",
+        );
+        assert_eq!(
+            texts("a.rs", source),
+            ["内側の doc だ。", "外側の doc だ。", "ただのブロックだ。"]
+        );
+        assert_eq!(
+            kinds_of("a.rs", source),
+            [
+                SegmentKind::DocComment,
+                SegmentKind::DocComment,
+                SegmentKind::Comment,
+            ]
         );
     }
 
