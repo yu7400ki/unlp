@@ -1,1 +1,1 @@
-exclude = ["tests/**", "src/rule/harness.rs"]
+exclude = ["tests/**"]
