@@ -148,28 +148,37 @@ struct Change {
     added: Vec<LineRange>,
 }
 
-/// 差分の出力を、ファイルごとの追加・変更行の範囲に分ける。
+/// 差分の出力を、ファイルごとの追加・変更行の範囲に分ける。hunk は直前の見出しで読んだ
+/// ファイルに属する。
 fn changes(diff: &str) -> Vec<Change> {
     let mut changes: Vec<Change> = Vec::new();
+    let mut current: Option<Change> = None;
     let mut header = false;
     for line in diff.lines() {
-        match line.strip_prefix("+++ b/") {
-            Some(path) if header => changes.push(Change {
-                path: path.to_string(),
+        if line.starts_with("--- ") {
+            changes.extend(current.take());
+            header = true;
+        } else if header {
+            header = false;
+            current = added_path(line).map(|path| Change {
+                path,
                 added: Vec::new(),
-            }),
-            _ => {
-                if let Some(range) = added_range(line)
-                    && let Some(change) = changes.last_mut()
-                {
-                    change.added.push(range);
-                }
-            }
+            });
+        } else if let Some(range) = added_range(line)
+            && let Some(change) = current.as_mut()
+        {
+            change.added.push(range);
         }
-        header = line.starts_with("--- ");
     }
+    changes.extend(current);
     changes.retain(|change| !change.added.is_empty());
     changes
+}
+
+/// 見出しが示す、追加・変更後のファイルのパス。名前に空白を含むとき git は行末に TAB を付ける。
+fn added_path(line: &str) -> Option<String> {
+    let path = line.strip_prefix("+++ b/")?;
+    Some(path.trim_end_matches('\t').to_string())
 }
 
 /// hunk の見出しが示す、追加・変更後の行範囲。追加した行が無い hunk は `None`。
@@ -595,9 +604,9 @@ mod tests {
             "@@ -3 +4 @@\n",
             "-前の行だ。\n",
             "+直した行だ。\n",
-            "diff --git a/b.md b/b.md\n",
-            "--- a/b.md\n",
-            "+++ b/b.md\n",
+            "diff --git a/b c.md b/b c.md\n",
+            "--- a/b c.md\t\n",
+            "+++ b/b c.md\t\n",
             "@@ -1 +1 @@\n",
             "-前だ。\n",
             "++++ b/c.md\n",
@@ -606,6 +615,11 @@ mod tests {
             "+++ b/c.txt\n",
             "@@ -1 +0,0 @@\n",
             "-消した行だ。\n",
+            "diff --git \"a/d\\t.md\" \"b/d\\t.md\"\n",
+            "--- \"a/d\\t.md\"\n",
+            "+++ \"b/d\\t.md\"\n",
+            "@@ -1,0 +9 @@\n",
+            "+足した行だ。\n",
         );
         let changes = changes(diff);
         let ranges: Vec<(&str, Vec<(u32, u32)>)> = changes
@@ -621,7 +635,7 @@ mod tests {
             .collect();
         assert_eq!(
             ranges,
-            [("a.md", vec![(2, 2), (4, 4)]), ("b.md", vec![(1, 1)])]
+            [("a.md", vec![(2, 2), (4, 4)]), ("b c.md", vec![(1, 1)])]
         );
     }
 

@@ -163,10 +163,18 @@ const DOC_AFTER: &str = concat!(
     "追加した段落だ。\n",
 );
 
+/// 名前に空白を含むファイル。git は差分の見出しの行末に TAB を付ける。
+const SPACED_PATH: &str = "docs/read me.md";
+
+const SPACED_BEFORE: &str = "空白を含む名前の段落だ。\n";
+
+const SPACED_AFTER: &str = "空白を含む名前の段落だ。\n\n足した段落だ。\n";
+
 /// 差分に残る Segment。触った行に重なるノードだけが対象になる。
-const TOUCHED: [&str; 4] = [
+const TOUCHED: [&str; 5] = [
     "複数行の段落の一行目だ。二行目を直した。",
     "追加した段落だ。",
+    "足した段落だ。",
     "複数行にわたる説明の一行目だ。二行目を直した。",
     "追加した行のコメントだ。",
 ];
@@ -176,12 +184,14 @@ fn repo_with_staged_change() -> Repo {
     let repo = Repo::new();
     repo.write("src/lib.rs", LIB_BEFORE);
     repo.write("doc.md", DOC_BEFORE);
+    repo.write(SPACED_PATH, SPACED_BEFORE);
     repo.write("config.toml", "値 = \"設定の文だ。\"\n");
     repo.git(&["add", "."]);
     repo.commit("chore: init\n");
 
     repo.write("src/lib.rs", LIB_AFTER);
     repo.write("doc.md", DOC_AFTER);
+    repo.write(SPACED_PATH, SPACED_AFTER);
     repo.write("config.toml", "値 = \"直した設定の文だ。\"\n");
     repo.git(&["add", "."]);
     repo
@@ -263,7 +273,11 @@ fn commits_beyond_the_first_one_are_an_error_of_git() {
 fn the_staged_diff_keeps_the_nodes_the_added_lines_touch() {
     let repo = repo_with_staged_change();
     let report = json(repo.unlp().args(["diff", "--staged", "--json"]));
-    assert_eq!(names(&report), ["doc.md", "src/lib.rs"], "{report}");
+    assert_eq!(
+        names(&report),
+        ["doc.md", SPACED_PATH, "src/lib.rs"],
+        "{report}"
+    );
     assert_eq!(report["total"]["ja_chars"], ja_chars(TOUCHED), "{report}");
 }
 
