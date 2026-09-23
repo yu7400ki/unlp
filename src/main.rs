@@ -390,6 +390,9 @@ fn print_findings(findings: &[Finding]) {
 /// 正規化した点を持たない集合の点の欄。
 const BELOW_FLOOR: &str = "下限未満";
 
+/// 日本語の文書を持たない集合の点の欄。
+const EMPTY: &str = "集合が空";
+
 /// 集合ごとの点と層の小計、規則ごとの 1000 字あたりの件数、受け入れ基準の判定を出力する。
 fn print_bench(report: &bench::BenchReport) {
     print_table(&point_rows(report.sets()));
@@ -398,12 +401,17 @@ fn print_bench(report: &bench::BenchReport) {
     println!();
     if report.met() {
         println!("受け入れ基準を満たす");
-        return;
+    } else {
+        println!("受け入れ基準を満たさない");
+        for set in report.violations() {
+            let point = set.point().expect("基準を外れた集合は点を持つ");
+            println!("  {}  {}  {point:.2} 点", set.name(), set.side().name());
+        }
     }
-    println!("受け入れ基準を満たさない");
-    for set in report.violations() {
-        let point = set.point().expect("基準を外れた集合は点を持つ");
-        println!("  {}  {}  {point:.1} 点", set.name(), set.side().name());
+    for set in report.sets() {
+        if set.verdict() == bench::Verdict::Empty {
+            println!("  {EMPTY}  {}", set.name());
+        }
     }
 }
 
@@ -428,13 +436,17 @@ fn point_rows(sets: &[bench::SetScore]) -> Vec<Vec<String>> {
         ];
         match total.mode() {
             ScoreMode::Normalized { per_1000, by_layer } => {
-                row.push(format!("{per_1000:.1}"));
+                row.push(format!("{per_1000:.2}"));
                 row.extend(Layer::ALL.iter().map(|layer| {
-                    format!("{:.1}", by_layer.get(layer).copied().unwrap_or_default())
+                    format!("{:.2}", by_layer.get(layer).copied().unwrap_or_default())
                 }));
             }
             ScoreMode::CountOnly => {
-                row.push(BELOW_FLOOR.to_string());
+                let point = match set.verdict() {
+                    bench::Verdict::Empty => EMPTY,
+                    _ => BELOW_FLOOR,
+                };
+                row.push(point.to_string());
                 row.extend(Layer::ALL.iter().map(|_| "-".to_string()));
             }
         }

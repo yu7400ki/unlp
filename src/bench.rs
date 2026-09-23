@@ -150,6 +150,8 @@ pub enum Verdict {
     Violated,
     /// 日本語の文字数が下限未満で正規化した点を持たず、判定の対象にならない。
     BelowFloor,
+    /// 日本語の文書を 1 つも持たない。
+    Empty,
 }
 
 /// 集合 1 つの採点結果。
@@ -177,7 +179,7 @@ impl SetScore {
             name: set.name.clone(),
             side: set.side,
             by_rule_per_1000: per_1000(&total),
-            verdict: verdict(set.side, total.mode()),
+            verdict: verdict(set.side, &total),
             total,
         }
     }
@@ -234,9 +236,13 @@ impl BenchReport {
     }
 }
 
-/// 側ごとの基準に照らした判定。正規化した点を持たない集合は判定しない。
-fn verdict(side: Side, mode: &ScoreMode) -> Verdict {
-    let ScoreMode::Normalized { per_1000, .. } = mode else {
+/// 側ごとの基準に照らした判定。日本語の文書を持たない集合と、正規化した点を持たない集合は
+/// 判定しない。
+fn verdict(side: Side, total: &Total) -> Verdict {
+    if total.ja_chars() == 0 {
+        return Verdict::Empty;
+    }
+    let ScoreMode::Normalized { per_1000, .. } = total.mode() else {
         return Verdict::BelowFloor;
     };
     let met = match side {
@@ -450,6 +456,30 @@ mod tests {
         assert_eq!(
             SetScore::new(&set(Side::Claude), total(CLAUDE_MIN - 0.1)).verdict(),
             Verdict::Violated
+        );
+    }
+
+    /// 日本語の文書が 1 つも無い集合の集計。
+    fn empty_total() -> Total {
+        Score::new(
+            &[],
+            Vec::new(),
+            Measures::default(),
+            floor(),
+            &BTreeMap::new(),
+        )
+        .total()
+    }
+
+    #[test]
+    fn a_set_without_japanese_is_empty() {
+        let score = SetScore::new(&set(Side::Claude), empty_total());
+        assert_eq!(score.verdict(), Verdict::Empty);
+        assert_eq!(score.point(), None);
+        assert_eq!(score.total().ja_chars(), 0);
+        assert!(
+            BenchReport::new(vec![score]).met(),
+            "空の集合は判定を落とさない"
         );
     }
 

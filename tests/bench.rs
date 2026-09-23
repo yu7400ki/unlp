@@ -78,6 +78,7 @@ fn corpus(manifest: &str) -> TempDir {
         ("human/commits/commits.log", log()),
         ("claude/prose/a.md", CLAUDE.to_string()),
         ("claude/short/a.md", SHORT.to_string()),
+        ("claude/empty/a.md", "No Japanese here.\n".to_string()),
     ] {
         let path = dir.path().join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -137,7 +138,24 @@ fn a_claude_set_inside_the_human_range_fails_the_bench() {
         .assert()
         .code(1)
         .stdout(contains("受け入れ基準を満たさない"))
-        .stdout(contains("opus-prose  claude  0.0 点"));
+        .stdout(contains("opus-prose  claude  0.00 点"));
+}
+
+#[test]
+fn an_empty_set_is_named_in_the_judgment() {
+    let dir = corpus(
+        "[[set]]\nname = \"zenn\"\nside = \"human\"\npaths = [\"human/prose\"]\n\n\
+         [[set]]\nname = \"empty-set\"\nside = \"claude\"\npaths = [\"claude/empty\"]\n",
+    );
+    bench(&dir)
+        .assert()
+        .success()
+        .stdout(contains("集合が空").and(contains("empty-set")))
+        .stdout(contains("受け入れ基準を満たす"));
+
+    let report = json(&mut bench(&dir));
+    assert_eq!(report["sets"][1]["verdict"], "empty");
+    assert_eq!(report["sets"][1]["total"]["ja_chars"], 0);
 }
 
 #[test]
