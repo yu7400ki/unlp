@@ -9,7 +9,7 @@ UNLP（UnNatural Language Processing、不自然言語処理）は、AI（特に
 Rust のツールチェーン（edition 2024）が必要です。形態素解析の辞書（UniDic）をバイナリに同梱するため、ビルドには時間がかかります。
 
 ```bash
-cargo install --path .
+cargo install --git https://github.com/yu7400ki/unlp
 ```
 
 git の `commit-msg` hook として設置すると、コミットのたびにメッセージとステージした差分を採点して、しきい値を超過したコミットを拒否するようになります。

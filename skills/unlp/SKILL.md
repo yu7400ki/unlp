@@ -10,7 +10,7 @@ description: 日本語の文章を出す前に unlp で検査し、規則 ID ご
 ## 導入
 
 ```bash
-cargo install --path .   # または配布バイナリを PATH に置く
+cargo install --git https://github.com/yu7400ki/unlp
 unlp hook install
 ```
 
