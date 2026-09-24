@@ -130,6 +130,10 @@ mod tests {
         assert_eq!(excerpts("経路の往復を数える。"), ["経路", "往復"]);
         assert_eq!(excerpts("次の要求の応答を待つ。"), ["要求", "応答"]);
         assert_eq!(excerpts("上限は実測で決める。"), ["実測"]);
+        assert_eq!(excerpts("正本は1つでよい。"), ["正本"]);
+        assert_eq!(excerpts("画像の寸法を緩衝域に書く。"), ["寸法", "緩衝"]);
+        assert_eq!(excerpts("どの族にも属さない。"), ["族"]);
+        assert_eq!(excerpts("免許は未確認だ。"), ["免許"]);
     }
 
     #[test]
@@ -142,6 +146,7 @@ mod tests {
     fn a_term_inside_a_compound_of_the_list_is_not_a_finding() {
         assert!(excerpts("逐語訳を避ける。").is_empty());
         assert!(excerpts("要求仕様と線形応答を読む。").is_empty());
+        assert!(excerpts("運転免許証を提示する。").is_empty());
         let text = "逐語訳を避ける。";
         let context = harness::context(text).without_word(ID, COMPOUNDS, "逐語訳");
         assert_eq!(

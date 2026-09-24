@@ -62,11 +62,6 @@ mod tests {
     #[test]
     fn a_phrase_of_the_list_is_a_finding() {
         assert_eq!(excerpts("品書きに項目を追加する。"), ["品書き"]);
-        assert_eq!(excerpts("設定の窓で旗を立てる。"), ["設定の窓", "旗を立て"]);
-        assert_eq!(
-            excerpts("昇格していない窓で回し直してください。"),
-            ["昇格していない窓"]
-        );
         assert_eq!(excerpts("ソースから建てた。"), ["ソースから建て"]);
         assert_eq!(excerpts("これがこちらのものかは照らせない。"), ["照らせ"]);
         assert_eq!(excerpts("事前検証を掛けてから返す。"), ["検証を掛"]);
@@ -88,6 +83,17 @@ mod tests {
         assert_eq!(
             excerpts("持ち越しの段取りを決める。"),
             ["持ち越し", "段取り"]
+        );
+        assert_eq!(excerpts("設定の窓で旗を立てる。"), ["窓", "旗"]);
+        assert_eq!(excerpts("同じ錠の下で輪を回す。"), ["錠", "輪"]);
+        assert_eq!(
+            excerpts("辞書を持つ器を入れ物の外に置く。"),
+            ["器", "入れ物"]
+        );
+        assert_eq!(excerpts("窓の札に名前を出す。"), ["窓", "札"]);
+        assert_eq!(
+            excerpts("自動の覆いの有無と重ねの決めを束ねで書く。"),
+            ["覆い", "重ね", "決め", "束ね"]
         );
     }
 
@@ -114,7 +120,8 @@ mod tests {
     #[test]
     fn an_ordinary_sentence_is_not_a_finding() {
         assert!(excerpts("鍵を回す。").is_empty());
-        assert!(excerpts("窓を開ける。").is_empty());
+        assert!(excerpts("窓口に問い合わせる。").is_empty());
+        assert!(excerpts("設定を決めてから層を重ねる。").is_empty());
         assert!(excerpts("電話を掛ける。").is_empty());
         assert!(excerpts("フィルタを掛ける。").is_empty());
         assert!(excerpts("倍率を掛ける。").is_empty());
@@ -133,7 +140,7 @@ mod tests {
     fn the_findings_follow_the_order_of_the_text() {
         assert_eq!(
             excerpts("焦点の輪を掃いてから品書きに戻す。"),
-            ["焦点の輪", "掃い", "品書き"]
+            ["輪", "掃い", "品書き"]
         );
     }
 }
